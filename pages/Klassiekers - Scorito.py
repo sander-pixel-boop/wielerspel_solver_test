@@ -652,7 +652,32 @@ with tab3:
     st.table(pd.DataFrame(kalender_data))
 
 with tab4:
-    st.header("ℹ️ De Techniek: Hoe werkt deze AI?")
+    st.header("ℹ️ Hoe werkt deze AI-Optimalisatie?")
     st.markdown("""
-    Deze applicatie gebruikt lineaire optimalisatie (PuLP) om het ideale Scorito-team te berekenen. Het doel is om binnen het keiharde budget de maximale hoeveelheid verwachte punten vinden, rekening houdend met de verplichte teamstructuur en wisselregels.
+    ### 🧠 1. Het Wiskundige Model (Integer Programming)
+    Deze app lost het 'Knapsack Problem' op. De AI probeert een team samen te stellen dat de maximale **Expected Value (EV)** heeft, terwijl het rekening houdt met twee harde restricties:
+    1. **Totaal Budget:** Je kunt niet meer dan €45M uitgeven (bij de start en na de wissels).
+    2. **Teamgrootte:** Er moeten exact 20 renners geselecteerd worden.
+
+    ### 📊 2. Expected Value (EV) Berekening
+    De waarde van een renner wordt niet bepaald door 'gevoel', maar door statistieken:
+    * **Modellen:** Je kunt kiezen tussen 'Scorito Ranking' (gebaseerd op de top-20 per koers) of 'Originele Curve' (exponentiële groei gebaseerd op skills).
+    * **Specialisaties:** Elke koers heeft een primair profiel (bijv. Roubaix = `COB`, Amstel = `HLL`).
+    * **Kopman Bonus:** De AI berekent per koers wie je 3 beste renners zijn en geeft hen een factor (3x, 2.5x en 2x). Dit is cruciaal omdat kopmannen het verschil maken in Scorito.
+    
+    
+
+    ### 🔁 3. De Wisselstrategie (Transfers)
+    De solver kijkt verder dan alleen de start. Hij splitst het seizoen in twee fasen:
+    * **Basis (17 renners):** Renners die het hele seizoen in je team blijven.
+    * **Early (3 renners):** Specialisten voor de kasseien die je na Parijs-Roubaix verkoopt.
+    * **Late (3 renners):** Heuvelspecialisten die je pas na Parijs-Roubaix inkoopt.
+    
+    De AI garandeert dat je budget na Parijs-Roubaix nog steeds klopt wanneer je de dure kasseivreters inruilt voor klimmers.
+
+    ### 🛠️ 4. Data-Opschoning
+    Om namen uit de startlijst (vaak zonder accenten) te koppelen aan de statistieken-database, gebruikt de app:
+    * **Normalisatie:** Haalt tekens zoals `ü` of `é` weg voor de vergelijking.
+    * **Fuzzy Matching:** Als namen 80% overeenkomen, worden ze automatisch gekoppeld.
+    * **Manual Overrides:** Handmatige correcties voor complexe namen (bijv. "Kung" naar "Stefan Küng").
     """)
