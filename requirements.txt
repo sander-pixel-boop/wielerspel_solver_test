@@ -1,0 +1,7 @@
+streamlit
+pandas
+pulp
+plotly
+thefuzz
+pypdf
+openpyxl
