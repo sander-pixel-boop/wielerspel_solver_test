@@ -66,9 +66,7 @@ def load_and_merge_data():
             "Poel": "Mathieu van der Poel", "Aert": "Wout van Aert", "Lie": "Arnaud De Lie",
             "Gils": "Maxim Van Gils", "Broek": "Frank van den Broek",
             "Magnier": "Paul Magnier", "Pogacar": "Tadej Pogačar", "Skujins": "Toms Skujiņš",
-            "Kooij": "Olav Kooij", "Kung": "Stefan Küng", "Gregoire": "Romain Grégoire",
-            "Grossschartner": "Felix Großschartner", "Waerenskjold": "Søren Wærenskjold",
-            "Traeen": "Torstein Træen", "Malecki": "Kamil Małecki"
+            "Kooij": "Olav Kooij"
         }
         
         for short in short_names:
@@ -325,7 +323,7 @@ with st.sidebar:
                     st.error(f"Fout bij inladen: {e}")
 
 st.title("🏆 Voorjaarsklassiekers: Scorito")
-st.markdown("**🔗 Handige links:** [Wielerorakel.nl](https://www.cyclingoracle.com/) | [Kopmanpuzzel](https://kopmanpuzzel.up.railway.app/)")
+st.markdown("**Met dank aan:** [Wielerorakel.nl](https://www.cyclingoracle.com/) | [Kopmanpuzzel](https://kopmanpuzzel.up.railway.app/)")
 st.divider()
 
 tab1, tab2, tab3, tab4 = st.tabs(["🚀 Jouw Team & Analyse", "📋 Alle Renners (Database)", "🗓️ Kalender & Profielen", "ℹ️ Uitleg & Documentatie"])
@@ -649,7 +647,7 @@ with tab3:
         {"Koers": "Waalse Pijl", "Afkorting": "WP", "Profiel AI": "Heuvel (HLL)", "Fase": "Na Roubaix"},
         {"Koers": "Luik-Bastenaken-Luik", "Afkorting": "LBL", "Profiel AI": "Heuvel (HLL)", "Fase": "Na Roubaix"}
     ]
-    st.table(pd.DataFrame(kalender_data))
+    st.dataframe(pd.DataFrame(kalender_data), use_container_width=True, hide_index=True)
 
 with tab4:
     st.header("ℹ️ Hoe werkt deze AI-Optimalisatie?")
