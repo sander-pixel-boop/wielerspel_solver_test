@@ -8,9 +8,9 @@ from thefuzz import process
 st.set_page_config(page_title="Scorito Backtester", layout="wide", page_icon="📊")
 
 st.title("📊 Scorito Modellen Leaderboard")
-st.markdown("De app berekent automatisch de standen, kopmannen en puntenopbouw. Gestarte renners (inclusief DNF) worden puur bepaald op basis van het gekoppelde `uitslagen.csv` bestand.")
+st.markdown("De app berekent automatisch de standen. Gestarte renners worden bepaald via `uitslagen.csv`. **Kopmannen voor de rekenmodellen worden berekend door de AI, voor 'Mijn Eigen Team' worden ze uit je eigen CSV gehaald.**")
 
-# --- HARDCODED TEAMS ---
+# --- HARDCODED TEAMS & FILES ---
 HARDCODED_TEAMS = {
     "Model 1": {
         "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Jonathan Milan", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Stefan Küng", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Jonas Abrahamsen", "Julian Alaphilippe", "Marc Hirschi"],
@@ -37,6 +37,10 @@ HARDCODED_TEAMS = {
         "Early": ["Mathieu van der Poel", "Jasper Philipsen", "Laurence Pithie"],
         "Late": ["Remco Evenepoel", "Ben Healy", "Marc Hirschi"]
     }
+}
+
+MODEL_FILES = {
+    "Mijn Eigen Team": "Mijn eigen team.csv"
 }
 
 ALLE_KOERSEN = ["OHN", "KBK", "SB", "MSR", "E3", "GW", "DDV", "RVV", "PR", "BP", "AGR", "WP", "LBL", "EF"]
@@ -94,7 +98,6 @@ else:
             beste_match, score = process.extractOne(rider_name, alle_renners)
             
             if score > 70:
-                # 999 is de code voor DNF, OTL, etc. Ze zijn gestart, dus ze doen mee voor teampunten.
                 rank = int(rank_str) if rank_str.isdigit() else 999 
                 uitslag_parsed.append({
                     "Koers": koers, 
@@ -132,15 +135,53 @@ else:
 
                 for model_naam, model_data in HARDCODED_TEAMS.items():
                     actieve_selectie = model_data["Basis"] + (model_data["Late"] if is_late_season else model_data["Early"])
-                    
                     beschikbare_renners = [r for r in actieve_selectie if r in df_koers_uitslag['Renner'].values]
                     
+                    c1, c2, c3 = None, None, None
+                    
+                    # 1. Alleen voor "Mijn Eigen Team": Haal kopmannen uit de CSV
+                    if model_naam == "Mijn Eigen Team":
+                        csv_file = MODEL_FILES.get(model_naam)
+                        if csv_file and os.path.exists(csv_file):
+                            try:
+                                df_model = pd.read_csv(csv_file)
+                                if koers in df_model.columns:
+                                    c1_row = df_model[df_model[koers] == 'Kopman 1']
+                                    c2_row = df_model[df_model[koers] == 'Kopman 2']
+                                    c3_row = df_model[df_model[koers] == 'Kopman 3']
+                                    
+                                    c1_intended = c1_row['Renner'].values[0] if not c1_row.empty else None
+                                    c2_intended = c2_row['Renner'].values[0] if not c2_row.empty else None
+                                    c3_intended = c3_row['Renner'].values[0] if not c3_row.empty else None
+                                    
+                                    # Bevestig of de geplande kopman daadwerkelijk is gestart
+                                    if c1_intended in beschikbare_renners: c1 = c1_intended
+                                    if c2_intended in beschikbare_renners: c2 = c2_intended
+                                    if c3_intended in beschikbare_renners: c3 = c3_intended
+                            except Exception:
+                                pass
+                            
+                    # 2. Vul ontbrekende kopmannen (of DNS) aan o.b.v. hoogste stat (Voor de overige modellen gebeurt dit altijd)
                     team_stats = df_stats[df_stats['Renner'].isin(beschikbare_renners)].copy()
                     team_stats = team_stats.sort_values(by=koers_stat, ascending=False).reset_index(drop=True)
-                    kopmannen = team_stats.head(3)['Renner'].tolist()
-                    c1 = kopmannen[0] if len(kopmannen) > 0 else None
-                    c2 = kopmannen[1] if len(kopmannen) > 1 else None
-                    c3 = kopmannen[2] if len(kopmannen) > 2 else None
+                    
+                    reeds_kopman = [x for x in [c1, c2, c3] if x is not None]
+                    
+                    for r in team_stats['Renner'].tolist():
+                        if c1 is not None and c2 is not None and c3 is not None:
+                            break
+                        if r in reeds_kopman:
+                            continue
+                            
+                        if c1 is None:
+                            c1 = r
+                            reeds_kopman.append(r)
+                        elif c2 is None:
+                            c2 = r
+                            reeds_kopman.append(r)
+                        elif c3 is None:
+                            c3 = r
+                            reeds_kopman.append(r)
 
                     koers_score = 0
                     
@@ -240,7 +281,7 @@ else:
             st.divider()
             
             # Gekozen kopmannen
-            st.subheader("🎯 Automatische Kopmannen per Koers")
+            st.subheader("🎯 Kopmannen per Koers (AI voor Modellen, CSV voor Eigen Team)")
             df_kopmannen = df_res[['Koers', 'Model', 'C1 (3x)', 'C2 (2.5x)', 'C3 (2x)']]
             df_kopmannen['Koers_Index'] = df_kopmannen['Koers'].apply(lambda x: verreden_koersen.index(x))
             df_kopmannen = df_kopmannen.sort_values(by=['Koers_Index', 'Model']).drop(columns=['Koers_Index'])
