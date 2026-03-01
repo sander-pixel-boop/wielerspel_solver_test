@@ -8,31 +8,39 @@ from thefuzz import process
 st.set_page_config(page_title="Scorito Backtester", layout="wide", page_icon="📊")
 
 st.title("📊 Scorito Modellen Leaderboard")
-st.markdown("De app berekent automatisch de standen. Gestarte renners worden bepaald via `uitslagen.csv`. **Kopmannen voor de rekenmodellen worden berekend door de AI, voor 'Mijn Eigen Team' staan ze vastgeprogrammeerd in de code.**")
+st.markdown("""
+De app berekent automatisch de standen. Gestarte renners worden bepaald via `uitslagen.csv`. **Kopmannen voor de rekenmodellen worden berekend door de AI, voor 'Sander's Team' staan ze vastgeprogrammeerd in de code.**
+
+**Toelichting Modellen:**
+* **Rekenmodel 1:** Scorito ranking (dynamisch)
+* **Rekenmodel 2:** Originele Curve (Macht 4)
+* **Rekenmodel 3:** Extreme Curve (Macht 10)
+* **Rekenmodel 4:** Tiers & Spreiding (Realistisch)
+""")
 
 # --- HARDCODED TEAMS & KOPMANNEN ---
 HARDCODED_TEAMS = {
-    "Rekenmodel 1 Scorito ranking (dynamisch)": {
+    "Rekenmodel 1": {
         "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Jonathan Milan", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Stefan Küng", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Jonas Abrahamsen", "Julian Alaphilippe", "Marc Hirschi"],
         "Early": ["Jasper Philipsen", "Mads Pedersen", "Florian Vermeersch"],
         "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
     },
-    "Rekenmodel 2 Originele Curve (Macht 4)": {
+    "Rekenmodel 2": {
         "Basis": ["Tadej Pogačar", "Mads Pedersen", "Jonathan Milan", "Arnaud De Lie", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Mattias Skjelmose", "Florian Vermeersch", "Toms Skujiņš", "Mike Teunissen", "Marijn van den Berg", "Laurence Pithie", "Jonas Abrahamsen", "Vincenzo Albanese", "Jenno Berckmoes", "Oliver Naesen"],
         "Early": ["Mathieu van der Poel", "Jasper Philipsen", "Jasper Stuyven"],
         "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
     },
-    "Rekenmodel 3 Extreme Curve (Macht 10)": {
+    "Rekenmodel 3": {
         "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Jasper Philipsen", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Mattias Skjelmose", "Florian Vermeersch", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Laurence Pithie", "Gianni Vermeersch", "Jonas Abrahamsen", "Julian Alaphilippe", "Quinten Hermans"],
         "Early": ["Mads Pedersen", "Jonathan Milan", "Arnaud De Lie"],
         "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
     },
-    "Rekenmodel 4 Tiers & Spreiding (Realistich)": {
+    "Rekenmodel 4": {
         "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Mads Pedersen", "Jonathan Milan", "Tim Wellens", "Paul Magnier", "Dylan Groenewegen", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Jonas Vingegaard", "Giulio Ciccone", "Gianni Vermeersch", "Jonas Abrahamsen", "Marc Hirschi"],
         "Early": ["Jasper Philipsen", "Tim Merlier", "Isaac del Toro"],
         "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
     },
-    "Mijn Eigen Team": {
+    "Sander's Team": {
         "Basis": ["Tadej Pogačar", "Jonathan Milan", "Tom Pidcock", "Christophe Laporte", "Tim Wellens", "Paul Magnier", "Romain Grégoire", "Mattias Skjelmose", "Jasper Stuyven", "Florian Vermeersch", "Milan Fretin", "Jordi Meeus", "Toms Skujiņš", "Mike Teunissen", "Jonas Vingegaard", "Gianni Vermeersch", "Jonas Abrahamsen"],
         "Early": ["Mathieu van der Poel", "Jasper Philipsen", "Laurence Pithie"],
         "Late": ["Remco Evenepoel", "Ben Healy", "Marc Hirschi"]
@@ -142,7 +150,7 @@ else:
                     
                     c1, c2, c3 = None, None, None
                     
-                    if model_naam == "Mijn Eigen Team":
+                    if model_naam == "Sander's Team":
                         geplande_kopmannen = MIJN_EIGEN_KOPMANNEN.get(koers, {})
                         c1_intended = geplande_kopmannen.get("C1")
                         c2_intended = geplande_kopmannen.get("C2")
@@ -271,7 +279,7 @@ else:
             
             st.divider()
             
-            # --- Nieuwe, overzichtelijkere Detail Analyse Sectie ---
+            # Detail Analyse Sectie
             st.subheader("🔍 Inzoomen per Koers")
             geselecteerde_koers = st.selectbox("Selecteer een koers om kopmannen en puntenopbouw in te zien:", verreden_koersen)
             
@@ -299,3 +307,19 @@ else:
                                 st.markdown(f"*Totaal score in {geselecteerde_koers}: **{df_m['Punten'].sum()}***")
                             else:
                                 st.info("Geen punten gescoord in deze koers.")
+
+# --- VOLLEDIGE SELECTIES WEERGAVE ---
+st.divider()
+st.subheader("📋 Volledige Selecties per Model (Alle 23 renners)")
+
+selectie_data = {}
+for m_name, m_data in HARDCODED_TEAMS.items():
+    # Bundelt de Basis (17), Wissels Voorjaar (3) en Wissels Heuvels (3) tot de volledige 23 renners
+    alle_renners_team = m_data['Basis'] + m_data['Early'] + m_data['Late']
+    selectie_data[m_name] = alle_renners_team
+
+df_selecties = pd.DataFrame(selectie_data)
+# Index hernoemen naar 1 t/m 23 in plaats van 0 t/m 22
+df_selecties.index = range(1, len(df_selecties) + 1)
+
+st.dataframe(df_selecties, use_container_width=True)
