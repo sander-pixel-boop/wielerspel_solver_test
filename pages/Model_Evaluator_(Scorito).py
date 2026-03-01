@@ -5,11 +5,17 @@ import os
 from thefuzz import process
 
 # --- CONFIGURATIE ---
-st.set_page_config(page_title="Scorito Backtester", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Model Evaluator", layout="wide", page_icon="📊")
 
-st.title("📊 Scorito Modellen Leaderboard")
+st.title("📊 Scorito Model Evaluator")
 st.markdown("""
-De app berekent automatisch de standen. Gestarte renners worden bepaald via `uitslagen.csv`. **Kopmannen voor de rekenmodellen worden berekend door de AI, voor 'Sander's Team' staan ze vastgeprogrammeerd in de code.**
+Welkom bij de **Model Evaluator**. Dit dashboard test live hoe goed verschillende wiskundige Scorito-modellen presteren in de praktijk, en vergelijkt ze met een menselijke selectie (*Sander's Team*).
+
+**Hoe het werkt:**
+1. De gestarte renners en daadwerkelijke uitslagen worden ingeladen via `uitslagen.csv`.
+2. Voor de rekenmodellen kiest de AI volautomatisch de beste 3 gestarte kopmannen op basis van hun statistieken.
+3. Voor *Sander's Team* worden jouw vooraf doorgegeven kopmannen gebruikt.
+4. Na elke race worden de behaalde punten berekend en toegevoegd aan het algemeen klassement.
 
 **Toelichting Modellen:**
 * **Rekenmodel 1:** Scorito ranking (dynamisch)
@@ -265,14 +271,20 @@ else:
 
             # Gecombineerde Standen Tabel
             st.subheader("🏆 Klassement & Punten per Koers")
-            df_pivot = df_res.pivot(index='Model', columns='Koers', values='Punten').fillna(0).astype(int)
+            df_pivot = df_res.pivot(index='Model', columns='Koers', values='Punten')
+            
+            # Voeg alle ontbrekende koersen toe met pd.NA
+            for k in ALLE_KOERSEN:
+                if k not in df_pivot.columns:
+                    df_pivot[k] = pd.NA
+                    
             totaal_punten = df_res.groupby('Model')['Cumulatieve Punten'].max()
             df_combined = df_pivot.copy()
             df_combined.insert(0, 'Totaal', totaal_punten)
             df_combined = df_combined.reset_index().sort_values(by='Totaal', ascending=False)
             
             # Kolommen ordenen (Totaal vooraan, koersen chronologisch)
-            cols = ['Model', 'Totaal'] + [k for k in verreden_koersen if k in df_combined.columns]
+            cols = ['Model', 'Totaal'] + ALLE_KOERSEN
             df_combined = df_combined[cols]
             
             st.dataframe(df_combined, hide_index=True, use_container_width=True)
@@ -314,8 +326,10 @@ st.subheader("📋 Volledige Selecties per Model (Alle 23 renners)")
 
 selectie_data = {}
 for m_name, m_data in HARDCODED_TEAMS.items():
-    # Bundelt de Basis (17), Wissels Voorjaar (3) en Wissels Heuvels (3) tot de volledige 23 renners
-    alle_renners_team = m_data['Basis'] + m_data['Early'] + m_data['Late']
+    basis = m_data['Basis']
+    early = [f"{r} (Voorjaar)" for r in m_data['Early']]
+    late = [f"{r} (Heuvels)" for r in m_data['Late']]
+    alle_renners_team = basis + early + late
     selectie_data[m_name] = alle_renners_team
 
 df_selecties = pd.DataFrame(selectie_data)
