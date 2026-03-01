@@ -12,22 +12,22 @@ st.markdown("De app berekent automatisch de standen. Gestarte renners worden bep
 
 # --- HARDCODED TEAMS & KOPMANNEN ---
 HARDCODED_TEAMS = {
-    "Model 1": {
+    "Rekenmodel 1 Scorito ranking (dynamisch)": {
         "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Jonathan Milan", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Stefan Küng", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Jonas Abrahamsen", "Julian Alaphilippe", "Marc Hirschi"],
         "Early": ["Jasper Philipsen", "Mads Pedersen", "Florian Vermeersch"],
         "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
     },
-    "Model 2": {
+    "Rekenmodel 2 Originele Curve (Macht 4)": {
         "Basis": ["Tadej Pogačar", "Mads Pedersen", "Jonathan Milan", "Arnaud De Lie", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Mattias Skjelmose", "Florian Vermeersch", "Toms Skujiņš", "Mike Teunissen", "Marijn van den Berg", "Laurence Pithie", "Jonas Abrahamsen", "Vincenzo Albanese", "Jenno Berckmoes", "Oliver Naesen"],
         "Early": ["Mathieu van der Poel", "Jasper Philipsen", "Jasper Stuyven"],
         "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
     },
-    "Model 3": {
+    "Rekenmodel 3 Extreme Curve (Macht 10)": {
         "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Jasper Philipsen", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Mattias Skjelmose", "Florian Vermeersch", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Laurence Pithie", "Gianni Vermeersch", "Jonas Abrahamsen", "Julian Alaphilippe", "Quinten Hermans"],
         "Early": ["Mads Pedersen", "Jonathan Milan", "Arnaud De Lie"],
         "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
     },
-    "Model 4": {
+    "Rekenmodel 4 Tiers & Spreiding (Realistich)": {
         "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Mads Pedersen", "Jonathan Milan", "Tim Wellens", "Paul Magnier", "Dylan Groenewegen", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Jonas Vingegaard", "Giulio Ciccone", "Gianni Vermeersch", "Jonas Abrahamsen", "Marc Hirschi"],
         "Early": ["Jasper Philipsen", "Tim Merlier", "Isaac del Toro"],
         "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
