@@ -2,14 +2,13 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-import re
 from thefuzz import process
 
 # --- CONFIGURATIE ---
 st.set_page_config(page_title="Scorito Backtester", layout="wide", page_icon="📊")
 
 st.title("📊 Scorito Modellen Leaderboard")
-st.markdown("Plak de uitslagen, de app werkt `uitslagen.csv` bij en toont de cumulatieve scores per model inclusief gekozen kopmannen.")
+st.markdown("De app berekent automatisch de standen, kopmannen en puntenopbouw op basis van het gekoppelde `uitslagen.csv` bestand uit de GitHub repository.")
 
 # --- HARDCODED TEAMS ---
 HARDCODED_TEAMS = {
@@ -44,12 +43,10 @@ ALLE_KOERSEN = ["OHN", "KBK", "SB", "MSR", "E3", "GW", "DDV", "RVV", "PR", "BP",
 STAT_MAPPING = {"OHN": "COB", "KBK": "SPR", "SB": "HLL", "MSR": "SPR", "E3": "COB", "GW": "SPR", "DDV": "COB", "RVV": "COB", "PR": "COB", "BP": "HLL", "AGR": "HLL", "WP": "HLL", "LBL": "HLL", "EF": "SPR"}
 LATE_SEASON_KOERSEN = ["BP", "AGR", "WP", "LBL", "EF"]
 
-# Nieuwe puntenverdeling
 SCORITO_PUNTEN = {
     1: 100, 2: 90, 3: 80, 4: 70, 5: 64, 6: 60, 7: 56, 8: 52, 9: 48, 10: 44,
     11: 40, 12: 36, 13: 32, 14: 28, 15: 24, 16: 20, 17: 16, 18: 12, 19: 8, 20: 4
 }
-# Nieuwe teampunten
 TEAMPUNTEN = {1: 30, 2: 20, 3: 10}
 
 # --- DATA LADEN ---
@@ -63,71 +60,61 @@ def load_data():
 df_stats = load_data()
 alle_renners = sorted(df_stats['Renner'].dropna().unique())
 
-# --- UI: UITSLAG TOEVOEGEN ---
-with st.expander("➕ Nieuwe Uitslag Toevoegen (Bron: PCS)", expanded=True):
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        koers_input = st.selectbox("Selecteer Koers", ALLE_KOERSEN)
-    with col2:
-        raw_text = st.text_area("Plak hier de ruwe tekst:", height=150)
-    
-    if st.button("Sla Uitslag Op", type="primary"):
-        if raw_text:
-            uitslag_parsed = []
-            lijnen = raw_text.strip().split('\n')
-            
-            for lijn in lijnen:
-                lijn = lijn.replace('\xa0', ' ').strip()
-                match = re.match(r'^(\d+)\s+(.+)', lijn)
-                if match:
-                    rank = int(match.group(1))
-                    if rank > 20: continue 
-                    
-                    rest_tekst = match.group(2)
-                    beste_match, score = process.extractOne(rest_tekst, alle_renners)
-                    
-                    if score > 70:
-                        uitslag_parsed.append({"Koers": koers_input, "Rank": rank, "Renner": beste_match})
-            
-            if uitslag_parsed:
-                df_new = pd.DataFrame(uitslag_parsed)
-                file_path = "uitslagen.csv"
-                if os.path.exists(file_path):
-                    df_existing = pd.read_csv(file_path, sep=None, engine='python')
-                    df_existing.columns = [str(c).strip().title() for c in df_existing.columns]
-                    
-                    if 'Koers' in df_existing.columns:
-                        df_existing = df_existing[df_existing['Koers'] != koers_input] 
-                    
-                    df_final = pd.concat([df_existing, df_new], ignore_index=True)
-                else:
-                    df_final = df_new
-                    
-                df_final.to_csv(file_path, index=False)
-                st.success(f"Top 20 van {koers_input} succesvol opgeslagen in uitslagen.csv!")
-            else:
-                st.error("Geen geldige renners gevonden in de tekst.")
-        else:
-            st.error("Plak eerst de tekst.")
-
 st.divider()
 
 # --- GRAFIEK EN BEREKENING ---
 if not os.path.exists("uitslagen.csv"):
-    st.info("Voeg hierboven een uitslag toe om de grafiek te genereren.")
+    st.error("Bestand `uitslagen.csv` niet gevonden. Zorg dat dit bestand in dezelfde map (GitHub repository) staat.")
 else:
-    df_uitslagen = pd.read_csv("uitslagen.csv", sep=None, engine='python')
-    df_uitslagen.columns = [str(c).strip().title() for c in df_uitslagen.columns]
-    
-    if 'Koers' not in df_uitslagen.columns or 'Rank' not in df_uitslagen.columns or 'Renner' not in df_uitslagen.columns:
-        st.error("Het bestand uitslagen.csv heeft niet de juiste kolommen. Verwijder het bestand en probeer het opnieuw.")
+    # Probeer het bestand in te lezen. Omdat de data getabuleerd is (tab separated):
+    try:
+        df_raw_uitslagen = pd.read_csv("uitslagen.csv", sep='\t', engine='python')
+    except Exception as e:
+        # Fallback als tab toch fout gaat
+        try:
+             df_raw_uitslagen = pd.read_csv("uitslagen.csv", sep=None, engine='python')
+        except Exception as e2:
+             st.error(f"Fout bij inlezen van uitslagen.csv: {e2}")
+             st.stop()
+             
+    # Normaliseer kolomnamen
+    df_raw_uitslagen.columns = [str(c).strip().title() for c in df_raw_uitslagen.columns]
+
+    if 'Race' not in df_raw_uitslagen.columns or 'Rnk' not in df_raw_uitslagen.columns or 'Rider' not in df_raw_uitslagen.columns:
+        st.error("Het bestand uitslagen.csv mist de vereiste kolommen: Race, Rnk, Rider.")
     else:
+        # Pre-process de uitslagen om de namen te matchen
+        uitslag_parsed = []
+        for index, row in df_raw_uitslagen.iterrows():
+            koers = str(row['Race']).strip()
+            rank_str = str(row['Rnk']).strip()
+            # Alleen top 20 verwerken
+            if rank_str.isdigit():
+                rank = int(rank_str)
+                if rank <= 20:
+                    rider_name = str(row['Rider']).strip()
+                    # Zoek de beste match in onze renners_stats.csv database
+                    beste_match, score = process.extractOne(rider_name, alle_renners)
+                    if score > 70:
+                        uitslag_parsed.append({
+                            "Koers": koers, 
+                            "Rank": rank, 
+                            "Renner": beste_match
+                        })
+                        
+        df_uitslagen = pd.DataFrame(uitslag_parsed)
+        
+        if df_uitslagen.empty:
+            st.error("Kon geen enkele renner succesvol matchen. Controleer of de namen in uitslagen.csv overeenkomen.")
+            st.stop()
+
         verreden_koersen = [k for k in ALLE_KOERSEN if k in df_uitslagen['Koers'].unique()]
         
         if not verreden_koersen:
-            st.info("Nog geen geldige koersen in de database.")
+            st.info("Nog geen geldige koersen gevonden in `uitslagen.csv` (bijv. 'OHN', 'KBK').")
         else:
             resultaten_lijst = []
+            details_lijst = []
 
             for koers in verreden_koersen:
                 is_late_season = koers in LATE_SEASON_KOERSEN
@@ -157,16 +144,31 @@ else:
                     
                     for renner in actieve_selectie:
                         punten = 0
+                        uitleg = []
+                        
                         finish = df_koers_uitslag[df_koers_uitslag['Renner'] == renner]
                         rank = finish['Rank'].values[0] if not finish.empty else None
                         base_pts = SCORITO_PUNTEN.get(rank, 0) if rank else 0
                         
                         multiplier = 1
-                        if renner == c1: multiplier = 3
-                        elif renner == c2: multiplier = 2.5
-                        elif renner == c3: multiplier = 2
+                        kopman_label = "-"
+                        if renner == c1: 
+                            multiplier = 3
+                            kopman_label = "C1"
+                        elif renner == c2: 
+                            multiplier = 2.5
+                            kopman_label = "C2"
+                        elif renner == c3: 
+                            multiplier = 2
+                            kopman_label = "C3"
                         
-                        punten += int(base_pts * multiplier)
+                        if base_pts > 0:
+                            pt_ind = int(base_pts * multiplier)
+                            punten += pt_ind
+                            if multiplier > 1:
+                                uitleg.append(f"Top 20 ({base_pts} x {multiplier})")
+                            else:
+                                uitleg.append(f"Top 20 ({base_pts})")
                         
                         renner_ploeg = df_stats.loc[df_stats['Renner'] == renner, 'Team'].values
                         renner_ploeg = renner_ploeg[0] if len(renner_ploeg) > 0 else ""
@@ -175,8 +177,20 @@ else:
                             for pos, punten_team in TEAMPUNTEN.items():
                                 if winnende_ploegen.get(pos) == renner_ploeg and renner_ploeg != "Onbekend":
                                     punten += punten_team
+                                    uitleg.append(f"Team P{pos} ({punten_team})")
                                     
                         koers_score += punten
+                        
+                        if punten > 0:
+                            details_lijst.append({
+                                "Koers": koers,
+                                "Model": model_naam,
+                                "Renner": renner,
+                                "Kopman": kopman_label,
+                                "Uitslag": f"P{rank}" if rank else "-",
+                                "Punten": punten,
+                                "Opbouw": " + ".join(uitleg)
+                            })
                         
                     resultaten_lijst.append({
                         "Model": model_naam,
@@ -223,8 +237,29 @@ else:
             # Gekozen kopmannen
             st.subheader("🎯 Automatische Kopmannen per Koers")
             df_kopmannen = df_res[['Koers', 'Model', 'C1 (3x)', 'C2 (2.5x)', 'C3 (2x)']]
-            # Sorteer chronologisch op koers
             df_kopmannen['Koers_Index'] = df_kopmannen['Koers'].apply(lambda x: verreden_koersen.index(x))
             df_kopmannen = df_kopmannen.sort_values(by=['Koers_Index', 'Model']).drop(columns=['Koers_Index'])
-            
             st.dataframe(df_kopmannen, hide_index=True, use_container_width=True)
+            
+            st.divider()
+            
+            # Gedetailleerde puntenopbouw
+            st.subheader("🔍 Gedetailleerde Puntenopbouw")
+            if details_lijst:
+                df_details = pd.DataFrame(details_lijst)
+                
+                f_col1, f_col2 = st.columns(2)
+                with f_col1:
+                    filter_koers = st.selectbox("Filter op Koers", ["Alle"] + verreden_koersen)
+                with f_col2:
+                    filter_model = st.selectbox("Filter op Model", ["Alle"] + list(HARDCODED_TEAMS.keys()))
+                
+                if filter_koers != "Alle":
+                    df_details = df_details[df_details['Koers'] == filter_koers]
+                if filter_model != "Alle":
+                    df_details = df_details[df_details['Model'] == filter_model]
+                
+                df_details = df_details.sort_values(by=['Koers', 'Model', 'Punten'], ascending=[True, True, False])
+                st.dataframe(df_details, hide_index=True, use_container_width=True)
+            else:
+                st.info("Nog geen punten gescoord door de geselecteerde teams in de verreden koersen.")
