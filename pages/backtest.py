@@ -142,19 +142,16 @@ else:
                     
                     c1, c2, c3 = None, None, None
                     
-                    # 1. Haal specifieke kopmannen op voor "Mijn Eigen Team"
                     if model_naam == "Mijn Eigen Team":
                         geplande_kopmannen = MIJN_EIGEN_KOPMANNEN.get(koers, {})
                         c1_intended = geplande_kopmannen.get("C1")
                         c2_intended = geplande_kopmannen.get("C2")
                         c3_intended = geplande_kopmannen.get("C3")
                         
-                        # Bevestig of de geplande kopman daadwerkelijk is gestart
                         if c1_intended in beschikbare_renners: c1 = c1_intended
                         if c2_intended in beschikbare_renners: c2 = c2_intended
                         if c3_intended in beschikbare_renners: c3 = c3_intended
                             
-                    # 2. Vul ontbrekende kopmannen (of DNS) aan o.b.v. hoogste stat (Voor rekenmodellen gebeurt dit altijd volledig)
                     team_stats = df_stats[df_stats['Renner'].isin(beschikbare_renners)].copy()
                     team_stats = team_stats.sort_values(by=koers_stat, ascending=False).reset_index(drop=True)
                     
@@ -240,7 +237,7 @@ else:
                         "C3 (2x)": c3
                     })
 
-            # Data voor grafiek
+            # Data prep voor grafiek en tabel
             df_res = pd.DataFrame(resultaten_lijst)
             df_res['Koers_Index'] = df_res['Koers'].apply(lambda x: verreden_koersen.index(x))
             df_res = df_res.sort_values(by=['Model', 'Koers_Index'])
@@ -258,47 +255,47 @@ else:
             fig.update_layout(xaxis=dict(categoryorder='array', categoryarray=verreden_koersen))
             st.plotly_chart(fig, use_container_width=True)
 
-            # Standen tabellen
-            c_links, c_rechts = st.columns(2)
-            with c_links:
-                st.subheader("🏆 Huidige Stand")
-                eindstand = df_res.groupby('Model')['Cumulatieve Punten'].max().reset_index().sort_values(by='Cumulatieve Punten', ascending=False)
-                eindstand.columns = ['Team', 'Punten']
-                st.dataframe(eindstand, hide_index=True)
+            # Gecombineerde Standen Tabel
+            st.subheader("🏆 Klassement & Punten per Koers")
+            df_pivot = df_res.pivot(index='Model', columns='Koers', values='Punten').fillna(0).astype(int)
+            totaal_punten = df_res.groupby('Model')['Cumulatieve Punten'].max()
+            df_combined = df_pivot.copy()
+            df_combined.insert(0, 'Totaal', totaal_punten)
+            df_combined = df_combined.reset_index().sort_values(by='Totaal', ascending=False)
             
-            with c_rechts:
-                st.subheader("📋 Ruwe Data")
-                df_pivot = df_res.pivot(index='Model', columns='Koers', values='Punten').reindex(columns=verreden_koersen)
-                st.dataframe(df_pivot)
-                
-            st.divider()
+            # Kolommen ordenen (Totaal vooraan, koersen chronologisch)
+            cols = ['Model', 'Totaal'] + [k for k in verreden_koersen if k in df_combined.columns]
+            df_combined = df_combined[cols]
             
-            # Gekozen kopmannen
-            st.subheader("🎯 Kopmannen per Koers (AI voor Modellen, Eigen keuze voor Eigen Team)")
-            df_kopmannen = df_res[['Koers', 'Model', 'C1 (3x)', 'C2 (2.5x)', 'C3 (2x)']]
-            df_kopmannen['Koers_Index'] = df_kopmannen['Koers'].apply(lambda x: verreden_koersen.index(x))
-            df_kopmannen = df_kopmannen.sort_values(by=['Koers_Index', 'Model']).drop(columns=['Koers_Index'])
-            st.dataframe(df_kopmannen, hide_index=True, use_container_width=True)
+            st.dataframe(df_combined, hide_index=True, use_container_width=True)
             
             st.divider()
             
-            # Gedetailleerde puntenopbouw
-            st.subheader("🔍 Gedetailleerde Puntenopbouw")
-            if details_lijst:
-                df_details = pd.DataFrame(details_lijst)
+            # --- Nieuwe, overzichtelijkere Detail Analyse Sectie ---
+            st.subheader("🔍 Inzoomen per Koers")
+            geselecteerde_koers = st.selectbox("Selecteer een koers om kopmannen en puntenopbouw in te zien:", verreden_koersen)
+            
+            if geselecteerde_koers:
+                # Toon kopmannen in een compacte tabel
+                st.markdown(f"**🎯 Kopmannen ({geselecteerde_koers})**")
+                df_kop_koers = df_res[df_res['Koers'] == geselecteerde_koers][['Model', 'C1 (3x)', 'C2 (2.5x)', 'C3 (2x)']]
+                st.dataframe(df_kop_koers, hide_index=True, use_container_width=True)
                 
-                f_col1, f_col2 = st.columns(2)
-                with f_col1:
-                    filter_koers = st.selectbox("Filter op Koers", ["Alle"] + verreden_koersen)
-                with f_col2:
-                    filter_model = st.selectbox("Filter op Model", ["Alle"] + list(HARDCODED_TEAMS.keys()))
-                
-                if filter_koers != "Alle":
-                    df_details = df_details[df_details['Koers'] == filter_koers]
-                if filter_model != "Alle":
-                    df_details = df_details[df_details['Model'] == filter_model]
-                
-                df_details = df_details.sort_values(by=['Koers', 'Model', 'Punten'], ascending=[True, True, False])
-                st.dataframe(df_details, hide_index=True, use_container_width=True)
-            else:
-                st.info("Nog geen punten gescoord door de geselecteerde teams in de verreden koersen.")
+                # Toon puntenopbouw overzichtelijk via tabs per team
+                st.markdown(f"**📝 Puntenopbouw per Model ({geselecteerde_koers})**")
+                if details_lijst:
+                    df_details = pd.DataFrame(details_lijst)
+                    df_det_koers = df_details[df_details['Koers'] == geselecteerde_koers]
+                    
+                    model_namen = df_kop_koers['Model'].tolist()
+                    tabs = st.tabs(model_namen)
+                    
+                    for i, m_naam in enumerate(model_namen):
+                        with tabs[i]:
+                            df_m = df_det_koers[df_det_koers['Model'] == m_naam]
+                            if not df_m.empty:
+                                df_m = df_m[['Renner', 'Kopman', 'Uitslag', 'Punten', 'Opbouw']].sort_values(by='Punten', ascending=False)
+                                st.dataframe(df_m, hide_index=True, use_container_width=True)
+                                st.markdown(f"*Totaal score in {geselecteerde_koers}: **{df_m['Punten'].sum()}***")
+                            else:
+                                st.info("Geen punten gescoord in deze koers.")
