@@ -59,8 +59,8 @@ MIJN_EIGEN_KOPMANNEN = {
     "KBK": {"C1": "Jonathan Milan", "C2": "Jasper Philipsen", "C3": "Jordi Meeus"},
 }
 
-ALLE_KOERSEN = ["OHN", "KBK", "SB", "MSR", "E3", "GW", "DDV", "RVV", "PR", "BP", "AGR", "WP", "LBL", "EF"]
-STAT_MAPPING = {"OHN": "COB", "KBK": "SPR", "SB": "HLL", "MSR": "SPR", "E3": "COB", "GW": "SPR", "DDV": "COB", "RVV": "COB", "PR": "COB", "BP": "HLL", "AGR": "HLL", "WP": "HLL", "LBL": "HLL", "EF": "SPR"}
+ALLE_KOERSEN = ["OHN", "KBK", "SB", "PN", "TA", "MSR", "BDP", "E3", "GW", "DDV", "RVV", "SP", "PR", "BP", "AGR", "WP", "LBL", "EF"]
+STAT_MAPPING = {"OHN": "COB", "KBK": "SPR", "SB": "HLL", "PN": "HLL/MTN", "TA": "SPR", "MSR": "AVG", "BDP": "SPR", "E3": "COB", "GW": "SPR", "DDV": "COB", "RVV": "COB", "SP": "SPR", "PR": "COB", "BP": "HLL", "AGR": "HLL", "WP": "HLL", "LBL": "HLL", "EF": "SPR"}
 LATE_SEASON_KOERSEN = ["BP", "AGR", "WP", "LBL", "EF"]
 
 SCORITO_PUNTEN = {
