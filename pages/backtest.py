@@ -93,8 +93,14 @@ with st.expander("➕ Nieuwe Uitslag Toevoegen (Bron: PCS)", expanded=True):
                 df_new = pd.DataFrame(uitslag_parsed)
                 file_path = "uitslagen.csv"
                 if os.path.exists(file_path):
-                    df_existing = pd.read_csv(file_path)
-                    df_existing = df_existing[df_existing['Koers'] != koers_input] # Overschrijf bestaande koers
+                    # Gebruik sep=None voor veilig inlezen
+                    df_existing = pd.read_csv(file_path, sep=None, engine='python')
+                    # Normaliseer kolomnamen van bestaand bestand (om KeyErrors te voorkomen)
+                    df_existing.columns = [str(c).strip().title() for c in df_existing.columns]
+                    
+                    if 'Koers' in df_existing.columns:
+                        df_existing = df_existing[df_existing['Koers'] != koers_input] # Overschrijf bestaande koers
+                    
                     df_final = pd.concat([df_existing, df_new], ignore_index=True)
                 else:
                     df_final = df_new
@@ -112,96 +118,104 @@ st.divider()
 if not os.path.exists("uitslagen.csv"):
     st.info("Voeg hierboven een uitslag toe om de grafiek te genereren.")
 else:
-    df_uitslagen = pd.read_csv("uitslagen.csv")
-    verreden_koersen = [k for k in ALLE_KOERSEN if k in df_uitslagen['Koers'].unique()]
+    # sep=None zoekt zelf uit of het komma's of puntkomma's zijn
+    df_uitslagen = pd.read_csv("uitslagen.csv", sep=None, engine='python')
     
-    if not verreden_koersen:
-        st.info("Nog geen geldige koersen in de database.")
+    # Forceer kolomnamen naar exact wat we zoeken om KeyErrors te voorkomen
+    df_uitslagen.columns = [str(c).strip().title() for c in df_uitslagen.columns]
+    
+    if 'Koers' not in df_uitslagen.columns or 'Rank' not in df_uitslagen.columns or 'Renner' not in df_uitslagen.columns:
+        st.error("Het bestand uitslagen.csv heeft niet de juiste kolommen. Verwijder het bestand en probeer het opnieuw.")
     else:
-        resultaten_lijst = []
-
-        for koers in verreden_koersen:
-            is_late_season = koers in LATE_SEASON_KOERSEN
-            koers_stat = STAT_MAPPING.get(koers, "COB")
-            
-            df_koers_uitslag = df_uitslagen[df_uitslagen['Koers'] == koers]
-            
-            winnende_ploegen = {}
-            for pos in [1, 2, 3]:
-                winnaar = df_koers_uitslag[df_koers_uitslag['Rank'] == pos]
-                if not winnaar.empty:
-                    renner_naam = winnaar['Renner'].values[0]
-                    ploeg = df_stats.loc[df_stats['Renner'] == renner_naam, 'Team'].values
-                    winnende_ploegen[pos] = ploeg[0] if len(ploeg) > 0 else "Onbekend"
-
-            for model_naam, model_data in HARDCODED_TEAMS.items():
-                actieve_selectie = model_data["Basis"] + (model_data["Late"] if is_late_season else model_data["Early"])
-                
-                team_stats = df_stats[df_stats['Renner'].isin(actieve_selectie)].copy()
-                team_stats = team_stats.sort_values(by=koers_stat, ascending=False).reset_index(drop=True)
-                kopmannen = team_stats.head(3)['Renner'].tolist()
-                c1 = kopmannen[0] if len(kopmannen) > 0 else None
-                c2 = kopmannen[1] if len(kopmannen) > 1 else None
-                c3 = kopmannen[2] if len(kopmannen) > 2 else None
-
-                koers_score = 0
-                
-                for renner in actieve_selectie:
-                    punten = 0
-                    finish = df_koers_uitslag[df_koers_uitslag['Renner'] == renner]
-                    rank = finish['Rank'].values[0] if not finish.empty else None
-                    base_pts = SCORITO_PUNTEN.get(rank, 0) if rank else 0
-                    
-                    multiplier = 1
-                    if renner == c1: multiplier = 3
-                    elif renner == c2: multiplier = 2.5
-                    elif renner == c3: multiplier = 2
-                    
-                    punten += int(base_pts * multiplier)
-                    
-                    renner_ploeg = df_stats.loc[df_stats['Renner'] == renner, 'Team'].values
-                    renner_ploeg = renner_ploeg[0] if len(renner_ploeg) > 0 else ""
-                    
-                    if rank not in [1, 2, 3]: 
-                        for pos, punten_team in TEAMPUNTEN.items():
-                            if winnende_ploegen.get(pos) == renner_ploeg and renner_ploeg != "Onbekend":
-                                punten += punten_team
-                                
-                    koers_score += punten
-                    
-                resultaten_lijst.append({
-                    "Model": model_naam,
-                    "Koers": koers,
-                    "Punten": koers_score
-                })
-
-        # Data voor grafiek
-        df_res = pd.DataFrame(resultaten_lijst)
-        df_res['Koers_Index'] = df_res['Koers'].apply(lambda x: verreden_koersen.index(x))
-        df_res = df_res.sort_values(by=['Model', 'Koers_Index'])
-        df_res['Cumulatieve Punten'] = df_res.groupby('Model')['Punten'].cumsum()
-
-        # Grafiek
-        fig = px.line(
-            df_res, 
-            x="Koers", 
-            y="Cumulatieve Punten", 
-            color="Model", 
-            markers=True,
-            title="Cumulatieve Scorito Punten per Model"
-        )
-        fig.update_layout(xaxis=dict(categoryorder='array', categoryarray=verreden_koersen))
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Stand
-        c_links, c_rechts = st.columns(2)
-        with c_links:
-            st.subheader("🏆 Huidige Stand")
-            eindstand = df_res.groupby('Model')['Cumulatieve Punten'].max().reset_index().sort_values(by='Cumulatieve Punten', ascending=False)
-            eindstand.columns = ['Team', 'Punten']
-            st.dataframe(eindstand, hide_index=True)
+        verreden_koersen = [k for k in ALLE_KOERSEN if k in df_uitslagen['Koers'].unique()]
         
-        with c_rechts:
-            st.subheader("📋 Ruwe Data")
-            df_pivot = df_res.pivot(index='Model', columns='Koers', values='Punten').reindex(columns=verreden_koersen)
-            st.dataframe(df_pivot)
+        if not verreden_koersen:
+            st.info("Nog geen geldige koersen in de database.")
+        else:
+            resultaten_lijst = []
+
+            for koers in verreden_koersen:
+                is_late_season = koers in LATE_SEASON_KOERSEN
+                koers_stat = STAT_MAPPING.get(koers, "COB")
+                
+                df_koers_uitslag = df_uitslagen[df_uitslagen['Koers'] == koers]
+                
+                winnende_ploegen = {}
+                for pos in [1, 2, 3]:
+                    winnaar = df_koers_uitslag[df_koers_uitslag['Rank'] == pos]
+                    if not winnaar.empty:
+                        renner_naam = winnaar['Renner'].values[0]
+                        ploeg = df_stats.loc[df_stats['Renner'] == renner_naam, 'Team'].values
+                        winnende_ploegen[pos] = ploeg[0] if len(ploeg) > 0 else "Onbekend"
+
+                for model_naam, model_data in HARDCODED_TEAMS.items():
+                    actieve_selectie = model_data["Basis"] + (model_data["Late"] if is_late_season else model_data["Early"])
+                    
+                    team_stats = df_stats[df_stats['Renner'].isin(actieve_selectie)].copy()
+                    team_stats = team_stats.sort_values(by=koers_stat, ascending=False).reset_index(drop=True)
+                    kopmannen = team_stats.head(3)['Renner'].tolist()
+                    c1 = kopmannen[0] if len(kopmannen) > 0 else None
+                    c2 = kopmannen[1] if len(kopmannen) > 1 else None
+                    c3 = kopmannen[2] if len(kopmannen) > 2 else None
+
+                    koers_score = 0
+                    
+                    for renner in actieve_selectie:
+                        punten = 0
+                        finish = df_koers_uitslag[df_koers_uitslag['Renner'] == renner]
+                        rank = finish['Rank'].values[0] if not finish.empty else None
+                        base_pts = SCORITO_PUNTEN.get(rank, 0) if rank else 0
+                        
+                        multiplier = 1
+                        if renner == c1: multiplier = 3
+                        elif renner == c2: multiplier = 2.5
+                        elif renner == c3: multiplier = 2
+                        
+                        punten += int(base_pts * multiplier)
+                        
+                        renner_ploeg = df_stats.loc[df_stats['Renner'] == renner, 'Team'].values
+                        renner_ploeg = renner_ploeg[0] if len(renner_ploeg) > 0 else ""
+                        
+                        if rank not in [1, 2, 3]: 
+                            for pos, punten_team in TEAMPUNTEN.items():
+                                if winnende_ploegen.get(pos) == renner_ploeg and renner_ploeg != "Onbekend":
+                                    punten += punten_team
+                                    
+                        koers_score += punten
+                        
+                    resultaten_lijst.append({
+                        "Model": model_naam,
+                        "Koers": koers,
+                        "Punten": koers_score
+                    })
+
+            # Data voor grafiek
+            df_res = pd.DataFrame(resultaten_lijst)
+            df_res['Koers_Index'] = df_res['Koers'].apply(lambda x: verreden_koersen.index(x))
+            df_res = df_res.sort_values(by=['Model', 'Koers_Index'])
+            df_res['Cumulatieve Punten'] = df_res.groupby('Model')['Punten'].cumsum()
+
+            # Grafiek
+            fig = px.line(
+                df_res, 
+                x="Koers", 
+                y="Cumulatieve Punten", 
+                color="Model", 
+                markers=True,
+                title="Cumulatieve Scorito Punten per Model"
+            )
+            fig.update_layout(xaxis=dict(categoryorder='array', categoryarray=verreden_koersen))
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Stand
+            c_links, c_rechts = st.columns(2)
+            with c_links:
+                st.subheader("🏆 Huidige Stand")
+                eindstand = df_res.groupby('Model')['Cumulatieve Punten'].max().reset_index().sort_values(by='Cumulatieve Punten', ascending=False)
+                eindstand.columns = ['Team', 'Punten']
+                st.dataframe(eindstand, hide_index=True)
+            
+            with c_rechts:
+                st.subheader("📋 Ruwe Data")
+                df_pivot = df_res.pivot(index='Model', columns='Koers', values='Punten').reindex(columns=verreden_koersen)
+                st.dataframe(df_pivot)
