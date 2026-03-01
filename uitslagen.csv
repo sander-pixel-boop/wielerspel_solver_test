@@ -1,21 +1,176 @@
-Koers,Naam,Positie,Punten
-OHN,Waerenskjold,1,100
-OHN,Magnier,2,90
-OHN,Philipsen,3,80
-OHN,Van Moer,4,72
-OHN,Watson,5,64
-OHN,Kubis,6,58
-OHN,Allegaert,7,52
-OHN,Albanese,8,46
-OHN,Marijn van den Berg,9,40
-OHN,Askey,10,36
-OHN,Aert,11,32
-OHN,Trentin,12,28
-OHN,Rasmus Pedersen,13,24
-OHN,Renard,14,20
-OHN,Tim van Dijke,15,16
-OHN,Vacek,16,14
-OHN,Livyns,17,12
-OHN,Bol,18,10
-OHN,Teunissen,19,8
-OHN,Stewart,20,6
+Race	Rnk	Rider	Team	UCI	Pnt	Time
+OHN	1	 van der Poel Mathieu	Alpecin-Premier Tech	400	225	04:53:55
+OHN	2	 van Dijke Tim	Red Bull - BORA - hansgrohe	320	150	00:22
+OHN	3	 Vermeersch Florian	UAE Team Emirates - XRG	260	110	00:24
+OHN	4	 Laporte Christophe	Team Visma | Lease a Bike	220	90	00:53
+OHN	5	 De Gendt Aimé	Pinarello Q36.5 Pro Cycling Team	180	80	00:54
+OHN	6	 Andresen Tobias Lund	Decathlon CMA CGM Team	140	70	00:57
+OHN	7	 Meeus Jordi	Red Bull - BORA - hansgrohe	120	60	,,
+OHN	8	 Turgis Anthony	TotalEnergies	100	50	,,
+OHN	9	 Renard Alexis 	Cofidis	80	46	,,
+OHN	10	 Lamperti Luke	EF Education - EasyPost	68	42	,,
+OHN	11	 Magnier Paul	Soudal Quick-Step	56	38	,,
+OHN	12	 Kopecký Matyáš	Unibet Rose Rockets	48	34	,,
+OHN	13	 Pithie Laurence	Red Bull - BORA - hansgrohe	40	30	,,
+OHN	14	 Politt Nils	UAE Team Emirates - XRG	32	26	,,
+OHN	15	 Trentin Matteo	Tudor Pro Cycling Team	28	22	,,
+OHN	16	 Berckmoes Jenno	Lotto Intermarché	24	20	,,
+OHN	17	 Abrahamsen Jonas	Uno-X Mobility	24	18	,,
+OHN	18	 Krijnsen Jelte 	Team Jayco AlUla	24	17	,,
+OHN	19	 Van Hemelen Vincent 	Team Flanders - Baloise	24	16	,,
+OHN	20	 Beullens Cedric	Cofidis	24	15	,,
+OHN	21	 Teuns Dylan	Lotto Intermarché	16	14	,,
+OHN	22	 van Dijke Mick	Red Bull - BORA - hansgrohe	16	13	,,
+OHN	23	 Hagenes Per Strand	Team Visma | Lease a Bike	16	12	01:34
+OHN	24	 Kirsch Alex	Cofidis	16	11	,,
+OHN	25	 Barrenetxea Jon	Movistar Team	16	10	01:55
+OHN	26	 Teunissen Mike	XDS Astana Team	16	9	,,
+OHN	27	 Vermeersch Gianni	Red Bull - BORA - hansgrohe	16	8	01:59
+OHN	28	 Gruel Thibaud	Groupama - FDJ United	16	7	02:02
+OHN	29	 Biermans Jenthe	Cofidis	16	6	,,
+OHN	30	 Dujardin Sandy	TotalEnergies	16	5	,,
+OHN	31	 Van Gestel Dries	Soudal Quick-Step	8	5	,,
+OHN	32	 Asgreen Kasper	EF Education - EasyPost	8	5	,,
+OHN	33	 Zingle Axel	Team Visma | Lease a Bike	8	5	,,
+OHN	34	 Donaldson Robert	Team Jayco AlUla	8	5	,,
+OHN	35	 Van Boven Luca	Lotto Intermarché	8	5	,,
+OHN	36	 Skujiņš Toms	Lidl - Trek	8	5	,,
+OHN	37	 Turner Ben	INEOS Grenadiers	8	5	,,
+OHN	38	 Braet Vito	Lotto Intermarché	8	5	,,
+OHN	39	 Segaert Alec	Bahrain - Victorious	8	5	,,
+OHN	40	 Albanese Vincenzo	EF Education - EasyPost	8	5	,,
+OHN	41	 Ballerini Davide	XDS Astana Team	8	5	,,
+OHN	42	 Page Hugo	Cofidis	8	5	,,
+OHN	43	 Dewulf Stan	Decathlon CMA CGM Team	8	5	,,
+OHN	44	 Grignard Sébastien	Lotto Intermarché	8	5	,,
+OHN	45	 Wellens Tim	UAE Team Emirates - XRG	8	5	,,
+OHN	46	 van Baarle Dylan	Soudal Quick-Step	8	5	,,
+OHN	47	 Johansen Julius	UAE Team Emirates - XRG	8	5	,,
+OHN	48	 Pidcock Thomas	Pinarello Q36.5 Pro Cycling Team	8	5	02:09
+OHN	49	 Huens Axel	Groupama - FDJ United	8	5	02:16
+OHN	50	 Bystrøm Sven Erik	Uno-X Mobility	8	5	,,
+OHN	51	 Stannard Robert	Bahrain - Victorious	4	5	02:58
+OHN	52	 Van Asbroeck Tom	NSN Cycling Team	4	5	,,
+OHN	53	 Lambrecht Michiel	Team Flanders - Baloise	4	5	,,
+OHN	54	 García Cortina Iván	Movistar Team	4	5	03:00
+OHN	55	 Teutenberg Tim Torn	Lidl - Trek	4	5	,,
+OHN	56	 Meurisse Xandro	Pinarello Q36.5 Pro Cycling Team	2	5	,,
+OHN	57	 Groves Kaden	Alpecin-Premier Tech	2	5	,,
+OHN	58	 Planckaert Edward	Alpecin-Premier Tech	2	5	,,
+OHN	59	 Askey Lewis	NSN Cycling Team	2	5	,,
+OHN	60	 Kielich Timo	Team Visma | Lease a Bike	2	5	03:33
+OHN	61	 Girmay Biniam	NSN Cycling Team		5	03:46
+OHN	62	 De Lie Arnaud	Lotto Intermarché		5	,,
+OHN	63	 Naesen Oliver	Decathlon CMA CGM Team		5	05:02
+OHN	64	 Lampaert Yves	Soudal Quick-Step		5	,,
+OHN	65	 Wærenskjold Søren	Uno-X Mobility		5	,,
+OHN	66	 Jacobs Johan	Groupama - FDJ United		5	07:34
+OHN	67	 Barthe Cyril	Groupama - FDJ United		5	07:37
+OHN	68	 Russo Clément	Groupama - FDJ United		5	,,
+OHN	69	 Pedersen Casper	Soudal Quick-Step		5	,,
+OHN	70	 Rasenberg Martijn	Unibet Rose Rockets		5	,,
+OHN	71	 Vanhoof Ward	Team Flanders - Baloise		5	,,
+OHN	72	 Kragh Andersen Søren	Lidl - Trek		5	,,
+OHN	73	 Hoelgaard Markus	Uno-X Mobility		5	,,
+OHN	74	 van den Berg Marijn	EF Education - EasyPost		5	,,
+OHN	75	 Kwiatkowski Michał	INEOS Grenadiers		5	,,
+OHN	76	 Marit Arne	Red Bull - BORA - hansgrohe		5	,,
+OHN	77	 Mozzato Luca	Tudor Pro Cycling Team		5	,,
+OHN	78	 Larsen Niklas	Unibet Rose Rockets		5	,,
+OHN	79	 Pedersen Rasmus Søjberg	Decathlon CMA CGM Team		5	08:31
+OHN	80	 Wright Fred	Pinarello Q36.5 Pro Cycling Team		5	09:23
+OHN	81	 Sheehan Riley	NSN Cycling Team		5	09:45
+OHN	82	 Gradek Kamil	Bahrain - Victorious		5	,,
+OHN	83	 Valter Attila	Bahrain - Victorious		5	,,
+OHN	84	 Kubiš Lukáš	Unibet Rose Rockets		5	,,
+OHN	85	 Affini Edoardo	Team Visma | Lease a Bike		5	,,
+OHN	86	 Tiller Rasmus	Uno-X Mobility		5	,,
+OHN	87	 Aniołkowski Stanisław	Cofidis		5	,,
+OHN	88	 Resell Erik Nordsæter	Uno-X Mobility		5	,,
+OHN	89	 Brunel Alexys 	TotalEnergies		5	,,
+OHN	90	 Vadic Baptiste	TotalEnergies		5	,,
+OHN	91	 Mattio Pietro	Team Visma | Lease a Bike		5	,,
+OHN	92	 De Pooter Dries	Team Jayco AlUla		5	,,
+OHN	93	 Maciejuk Filip	Movistar Team		5	,,
+OHN	94	 Małecki Kamil	Pinarello Q36.5 Pro Cycling Team		5	,,
+OHN	95	 Canal Carlos	Movistar Team		5	,,
+OHN	96	 Capiot Amaury	Team Jayco AlUla		5	,,
+OHN	97	 De Pestel Sander	Decathlon CMA CGM Team		5	,,
+OHN	98	 Sénéchal Florian	Alpecin-Premier Tech		5	,,
+OHN	99	 Tronchon Bastien	Groupama - FDJ United		5	,,
+OHN	100	 Bettiol Alberto	XDS Astana Team		5	,,
+OHN	101	 O'Brien Kelland	Team Jayco AlUla		5	,,
+OHN	102	 Kopecký Tomáš	Unibet Rose Rockets		5	,,
+OHN	103	 Kmínek Vojtěch	Burgos Burpellet BH		5	09:47
+OHN	104	 Cavia Daniel	Burgos Burpellet BH		5	,,
+OHN	105	 Bayer Tobias	Alpecin-Premier Tech		5	,,
+OHN	106	 De Bondt Dries	Team Jayco AlUla		5	,,
+OHN	107	 van den Berg Julius	Team Picnic PostNL		5	,,
+OHN	108	 Heiduk Kim	INEOS Grenadiers		5	,,
+OHN	109	 Belmans Lennert	Alpecin-Premier Tech		5	,,
+OHN	110	 Vervenne Jonathan	Soudal Quick-Step		5	,,
+OHN	111	 Sheffield Magnus	INEOS Grenadiers		5	,,
+OHN	112	 Withen Philipsen Albert	Lidl - Trek		5	,,
+OHN	113	 Lanhove Milan	Team Flanders - Baloise		5	,,
+OHN	114	 Alleno Clément 	Burgos Burpellet BH		5	,,
+OHN	115	 Vercouillie Victor	Team Flanders - Baloise		5	,,
+OHN	116	 Vacek Mathias	Lidl - Trek		5	,,
+OHN	117	 Degenkolb John	Team Picnic PostNL		5	,,
+OHN	118	 Reinderink Pepijn	Soudal Quick-Step		5	,,
+OHN	119	 Frison Frederik	Pinarello Q36.5 Pro Cycling Team		5	,,
+OHN	120	 Van Moer Brent	Pinarello Q36.5 Pro Cycling Team		5	,,
+OHN	121	 Gate Aaron	XDS Astana Team		5	,,
+OHN	122	 Bonnet Thomas	TotalEnergies		5	,,
+OHN	123	 Mullen Ryan	NSN Cycling Team		5	,,
+OHN	124	 Shmidt Artem	INEOS Grenadiers		5	,,
+OHN	125	 Romele Alessandro	XDS Astana Team		5	,,
+OHN	126	 Madouas Valentin	Groupama - FDJ United		5	,,
+OHN	127	 Feldmann Karsten Larsen	Unibet Rose Rockets		5	,,
+OHN	128	 Boivin Guillaume	NSN Cycling Team		5	,,
+OHN	129	 Bévort Carl-Frederik	Uno-X Mobility		5	,,
+OHN	130	 Allegaert Piet	Cofidis		5	,,
+OHN	131	 Bloem Joren	Unibet Rose Rockets		5	,,
+OHN	132	 van Sintmaartensdijk Roel	Lotto Intermarché		5	,,
+OHN	133	 Drizners Jarrad	Red Bull - BORA - hansgrohe		5	,,
+OHN	134	 Haller Marco	Tudor Pro Cycling Team		5	,,
+OHN	135	 Deweirdt Siebe	Team Flanders - Baloise		5	,,
+OHN	136	 Louvel Matis	NSN Cycling Team		5	,,
+OHN	DNF	 Bissegger Stefan	Decathlon CMA CGM Team			
+OHN	DNF	 Bol Cees	Decathlon CMA CGM Team			
+OHN	DNF	 Philipsen Jasper	Alpecin-Premier Tech			
+OHN	DNF	 Mayer Alexandre	Burgos Burpellet BH			
+OHN	DNF	 Bouglas Georgios	Burgos Burpellet BH			
+OHN	DNF	 Burnett Josh	Burgos Burpellet BH			
+OHN	DNF	 Macías César	Burgos Burpellet BH			
+OHN	DNF	 Gachignard Thomas	TotalEnergies			
+OHN	DNF	 Leroux Samuel	TotalEnergies			
+OHN	DNF	 Foldager Anders	Team Jayco AlUla			
+OHN	DNF	 Oliveira Rui	UAE Team Emirates - XRG			
+OHN	DNF	 Molano Juan Sebastián	UAE Team Emirates - XRG			
+OHN	DNF	 Herregodts Rune	UAE Team Emirates - XRG			
+OHN	DNF	 Vergaerde Otto	Lidl - Trek			
+OHN	DNF	 Theuns Edward	Lidl - Trek			
+OHN	DNF	 Livyns Arjen	XDS Astana Team			
+OHN	DNF	 Gonov Lev	XDS Astana Team			
+OHN	DNF	 Brennan Matthew	Team Visma | Lease a Bike			
+OHN	DNF	 Renard-Haquin Henri-François	Team Picnic PostNL			
+OHN	DNF	 van den Broek Frank	Team Picnic PostNL			
+OHN	DNF	 Flynn Sean	Team Picnic PostNL			
+OHN	DNF	 de Jong Timo	Team Picnic PostNL			
+OHN	DNF	 Roosen Timo	Team Picnic PostNL			
+OHN	DNF	 Watson Samuel	INEOS Grenadiers			
+OHN	DNF	 Swift Ben	INEOS Grenadiers			
+OHN	DNF	 Vandenstorme Dylan	Team Flanders - Baloise			
+OHN	DNF	 Moro Manlio	Movistar Team			
+OHN	DNF	 Adrià Roger	Movistar Team			
+OHN	DNF	 Aular Orluis	Movistar Team			
+OHN	DNF	 Van Mechelen Vlad	Bahrain - Victorious			
+OHN	DNF	 Mohorič Matej	Bahrain - Victorious			
+OHN	DNF	 Miquel Pau	Bahrain - Victorious			
+OHN	DNF	 Hobbs Noah	EF Education - EasyPost			
+OHN	DNF	 Simmons Colby	EF Education - EasyPost			
+OHN	DNF	 Honoré Mikkel Frølich	EF Education - EasyPost			
+OHN	DNF	 Küng Stefan	Tudor Pro Cycling Team			
+OHN	DNF	 Kelemen Petr	Tudor Pro Cycling Team			
+OHN	DNF	 Mikutis Aivaras	Tudor Pro Cycling Team			
+OHN	DNF	 Pluimers Rick	Tudor Pro Cycling Team			
