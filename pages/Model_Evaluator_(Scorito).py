@@ -9,13 +9,13 @@ st.set_page_config(page_title="Model Evaluator", layout="wide", page_icon="📊"
 
 st.title("📊 Scorito Model Evaluator")
 st.markdown("""
-Welkom bij de **Model Evaluator**. Dit dashboard test live hoe goed verschillende wiskundige Scorito-modellen presteren in de praktijk, en vergelijkt ze met een menselijke selectie (*Sander's Team*).
+Welkom bij de **Model Evaluator**. Dit dashboard test en vergelijkt live hoe verschillende wiskundige Scorito-modellen presteren in de praktijk. Deze modellen worden afgezet tegen een door een mens samengestelde referentieselectie (*Sander's Team*).
 
 **Hoe het werkt:**
-1. De gestarte renners en daadwerkelijke uitslagen worden ingeladen via `uitslagen.csv`.
-2. Voor de rekenmodellen kiest de AI volautomatisch de beste 3 gestarte kopmannen op basis van hun statistieken.
-3. Voor *Sander's Team* worden jouw vooraf doorgegeven kopmannen gebruikt.
-4. Na elke race worden de behaalde punten berekend en toegevoegd aan het algemeen klassement.
+1. Gestarte renners en daadwerkelijke uitslagen worden automatisch verwerkt via het koersverloop.
+2. Voor de rekenmodellen kiest het algoritme per koers de beste drie gestarte kopmannen op basis van data en statistieken.
+3. Voor de referentieselectie (*Sander's Team*) worden vooraf vastgestelde kopmannen gebruikt.
+4. Na elke race worden de individuele punten en teampunten berekend en toegevoegd aan het algemeen klassement.
 
 **Toelichting Modellen:**
 * **Rekenmodel 1:** Scorito ranking (dynamisch)
@@ -53,11 +53,10 @@ HARDCODED_TEAMS = {
     }
 }
 
-# Vul hier handmatig je kopmannen per koers in!
+# Vaste kopmannen per koers voor de referentieselectie
 MIJN_EIGEN_KOPMANNEN = {
     "OHN": {"C1": "Mathieu van der Poel", "C2": "Tom Pidcock", "C3": "Tim Wellens"},
     "KBK": {"C1": "Jonathan Milan", "C2": "Jasper Philipsen", "C3": "Jordi Meeus"},
-    # "SB": {"C1": "Renner X", "C2": "Renner Y", "C3": "Renner Z"},
 }
 
 ALLE_KOERSEN = ["OHN", "KBK", "SB", "MSR", "E3", "GW", "DDV", "RVV", "PR", "BP", "AGR", "WP", "LBL", "EF"]
@@ -86,7 +85,7 @@ st.divider()
 
 # --- GRAFIEK EN BEREKENING ---
 if not os.path.exists("uitslagen.csv"):
-    st.error("Bestand `uitslagen.csv` niet gevonden. Zorg dat dit bestand in dezelfde map (GitHub repository) staat.")
+    st.error("Bestand `uitslagen.csv` niet gevonden. Zorg dat dit bestand in de hoofddirectory staat.")
 else:
     try:
         df_raw_uitslagen = pd.read_csv("uitslagen.csv", sep='\t', engine='python')
@@ -107,7 +106,6 @@ else:
             koers = str(row['Race']).strip()
             rank_str = str(row['Rnk']).strip().upper()
             
-            # Negeer DNS of compleet lege velden
             if rank_str in ['DNS', 'NAN', '']:
                 continue 
                 
@@ -131,7 +129,7 @@ else:
         verreden_koersen = [k for k in ALLE_KOERSEN if k in df_uitslagen['Koers'].unique()]
         
         if not verreden_koersen:
-            st.info("Nog geen geldige koersen gevonden in `uitslagen.csv` (bijv. 'OHN', 'KBK').")
+            st.info("Nog geen geldige koersen gevonden in de dataset.")
         else:
             resultaten_lijst = []
             details_lijst = []
@@ -264,7 +262,7 @@ else:
                 y="Cumulatieve Punten", 
                 color="Model", 
                 markers=True,
-                title="Cumulatieve Scorito Punten per Model"
+                title="Verloop Cumulatieve Scorito Punten"
             )
             fig.update_layout(xaxis=dict(categoryorder='array', categoryarray=verreden_koersen))
             st.plotly_chart(fig, use_container_width=True)
@@ -273,7 +271,6 @@ else:
             st.subheader("🏆 Klassement & Punten per Koers")
             df_pivot = df_res.pivot(index='Model', columns='Koers', values='Punten')
             
-            # Voeg alle ontbrekende koersen toe met pd.NA
             for k in ALLE_KOERSEN:
                 if k not in df_pivot.columns:
                     df_pivot[k] = pd.NA
@@ -283,7 +280,6 @@ else:
             df_combined.insert(0, 'Totaal', totaal_punten)
             df_combined = df_combined.reset_index().sort_values(by='Totaal', ascending=False)
             
-            # Kolommen ordenen (Totaal vooraan, koersen chronologisch)
             cols = ['Model', 'Totaal'] + ALLE_KOERSEN
             df_combined = df_combined[cols]
             
@@ -296,13 +292,11 @@ else:
             geselecteerde_koers = st.selectbox("Selecteer een koers om kopmannen en puntenopbouw in te zien:", verreden_koersen)
             
             if geselecteerde_koers:
-                # Toon kopmannen in een compacte tabel
                 st.markdown(f"**🎯 Kopmannen ({geselecteerde_koers})**")
                 df_kop_koers = df_res[df_res['Koers'] == geselecteerde_koers][['Model', 'C1 (3x)', 'C2 (2.5x)', 'C3 (2x)']]
                 st.dataframe(df_kop_koers, hide_index=True, use_container_width=True)
                 
-                # Toon puntenopbouw overzichtelijk via tabs per team
-                st.markdown(f"**📝 Puntenopbouw per Model ({geselecteerde_koers})**")
+                st.markdown(f"**📝 Puntenopbouw per Selectie ({geselecteerde_koers})**")
                 if details_lijst:
                     df_details = pd.DataFrame(details_lijst)
                     df_det_koers = df_details[df_details['Koers'] == geselecteerde_koers]
@@ -333,7 +327,6 @@ for m_name, m_data in HARDCODED_TEAMS.items():
     selectie_data[m_name] = alle_renners_team
 
 df_selecties = pd.DataFrame(selectie_data)
-# Index hernoemen naar 1 t/m 23 in plaats van 0 t/m 22
 df_selecties.index = range(1, len(df_selecties) + 1)
 
 st.dataframe(df_selecties, use_container_width=True)
