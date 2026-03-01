@@ -42,7 +42,7 @@ HARDCODED_TEAMS = {
 # Vul hier handmatig je kopmannen per koers in!
 MIJN_EIGEN_KOPMANNEN = {
     "OHN": {"C1": "Mathieu van der Poel", "C2": "Tom Pidcock", "C3": "Tim Wellens"},
-    "KBK": {"C1": "Jasper Philipsen", "C2": "Jonathan Milan", "C3": "Paul Magnier"},
+    "KBK": {"C1": "Jonathan Milan", "C2": "Jasper Philipsen", "C3": "Jordi Meeus"},
     # "SB": {"C1": "Renner X", "C2": "Renner Y", "C3": "Renner Z"},
 }
 
