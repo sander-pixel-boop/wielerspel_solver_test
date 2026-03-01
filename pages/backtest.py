@@ -8,7 +8,7 @@ from thefuzz import process
 st.set_page_config(page_title="Scorito Backtester", layout="wide", page_icon="📊")
 
 st.title("📊 Scorito Modellen Leaderboard")
-st.markdown("De app berekent automatisch de standen, kopmannen en puntenopbouw op basis van het gekoppelde `uitslagen.csv` bestand uit de GitHub repository.")
+st.markdown("De app berekent automatisch de standen, kopmannen en puntenopbouw. Gestarte renners (inclusief DNF) worden puur bepaald op basis van het gekoppelde `uitslagen.csv` bestand.")
 
 # --- HARDCODED TEAMS ---
 HARDCODED_TEAMS = {
@@ -55,10 +55,11 @@ def load_data():
     df_stats = pd.read_csv("renners_stats.csv", sep='\t')
     if 'Naam' in df_stats.columns:
         df_stats = df_stats.rename(columns={'Naam': 'Renner'})
-    return df_stats
+    
+    alle_renners = sorted(df_stats['Renner'].dropna().unique())
+    return df_stats, alle_renners
 
-df_stats = load_data()
-alle_renners = sorted(df_stats['Renner'].dropna().unique())
+df_stats, alle_renners = load_data()
 
 st.divider()
 
@@ -66,46 +67,45 @@ st.divider()
 if not os.path.exists("uitslagen.csv"):
     st.error("Bestand `uitslagen.csv` niet gevonden. Zorg dat dit bestand in dezelfde map (GitHub repository) staat.")
 else:
-    # Probeer het bestand in te lezen. Omdat de data getabuleerd is (tab separated):
     try:
         df_raw_uitslagen = pd.read_csv("uitslagen.csv", sep='\t', engine='python')
     except Exception as e:
-        # Fallback als tab toch fout gaat
         try:
              df_raw_uitslagen = pd.read_csv("uitslagen.csv", sep=None, engine='python')
         except Exception as e2:
              st.error(f"Fout bij inlezen van uitslagen.csv: {e2}")
              st.stop()
              
-    # Normaliseer kolomnamen
     df_raw_uitslagen.columns = [str(c).strip().title() for c in df_raw_uitslagen.columns]
 
     if 'Race' not in df_raw_uitslagen.columns or 'Rnk' not in df_raw_uitslagen.columns or 'Rider' not in df_raw_uitslagen.columns:
         st.error("Het bestand uitslagen.csv mist de vereiste kolommen: Race, Rnk, Rider.")
     else:
-        # Pre-process de uitslagen om de namen te matchen
         uitslag_parsed = []
         for index, row in df_raw_uitslagen.iterrows():
             koers = str(row['Race']).strip()
-            rank_str = str(row['Rnk']).strip()
-            # Alleen top 20 verwerken
-            if rank_str.isdigit():
-                rank = int(rank_str)
-                if rank <= 20:
-                    rider_name = str(row['Rider']).strip()
-                    # Zoek de beste match in onze renners_stats.csv database
-                    beste_match, score = process.extractOne(rider_name, alle_renners)
-                    if score > 70:
-                        uitslag_parsed.append({
-                            "Koers": koers, 
-                            "Rank": rank, 
-                            "Renner": beste_match
-                        })
+            rank_str = str(row['Rnk']).strip().upper()
+            
+            # Negeer DNS of compleet lege velden
+            if rank_str in ['DNS', 'NAN', '']:
+                continue 
+                
+            rider_name = str(row['Rider']).strip()
+            beste_match, score = process.extractOne(rider_name, alle_renners)
+            
+            if score > 70:
+                # 999 is de code voor DNF, OTL, etc. Ze zijn gestart, dus ze doen mee voor teampunten.
+                rank = int(rank_str) if rank_str.isdigit() else 999 
+                uitslag_parsed.append({
+                    "Koers": koers, 
+                    "Rank": rank, 
+                    "Renner": beste_match
+                })
                         
         df_uitslagen = pd.DataFrame(uitslag_parsed)
         
         if df_uitslagen.empty:
-            st.error("Kon geen enkele renner succesvol matchen. Controleer of de namen in uitslagen.csv overeenkomen.")
+            st.error("Kon geen enkele renner succesvol matchen. Controleer of de namen in uitslagen.csv kloppen.")
             st.stop()
 
         verreden_koersen = [k for k in ALLE_KOERSEN if k in df_uitslagen['Koers'].unique()]
@@ -133,7 +133,9 @@ else:
                 for model_naam, model_data in HARDCODED_TEAMS.items():
                     actieve_selectie = model_data["Basis"] + (model_data["Late"] if is_late_season else model_data["Early"])
                     
-                    team_stats = df_stats[df_stats['Renner'].isin(actieve_selectie)].copy()
+                    beschikbare_renners = [r for r in actieve_selectie if r in df_koers_uitslag['Renner'].values]
+                    
+                    team_stats = df_stats[df_stats['Renner'].isin(beschikbare_renners)].copy()
                     team_stats = team_stats.sort_values(by=koers_stat, ascending=False).reset_index(drop=True)
                     kopmannen = team_stats.head(3)['Renner'].tolist()
                     c1 = kopmannen[0] if len(kopmannen) > 0 else None
@@ -143,6 +145,9 @@ else:
                     koers_score = 0
                     
                     for renner in actieve_selectie:
+                        if renner not in beschikbare_renners:
+                            continue
+                            
                         punten = 0
                         uitleg = []
                         
@@ -187,7 +192,7 @@ else:
                                 "Model": model_naam,
                                 "Renner": renner,
                                 "Kopman": kopman_label,
-                                "Uitslag": f"P{rank}" if rank else "-",
+                                "Uitslag": f"P{rank}" if rank <= 20 else ("DNF (wel teampunten)" if rank == 999 else f"P{rank}"),
                                 "Punten": punten,
                                 "Opbouw": " + ".join(uitleg)
                             })
