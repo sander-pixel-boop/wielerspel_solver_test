@@ -8,9 +8,9 @@ from thefuzz import process
 st.set_page_config(page_title="Scorito Backtester", layout="wide", page_icon="📊")
 
 st.title("📊 Scorito Modellen Leaderboard")
-st.markdown("De app berekent automatisch de standen. Gestarte renners worden bepaald via `uitslagen.csv`. **Kopmannen voor de rekenmodellen worden berekend door de AI, voor 'Mijn Eigen Team' worden ze uit je eigen CSV gehaald.**")
+st.markdown("De app berekent automatisch de standen. Gestarte renners worden bepaald via `uitslagen.csv`. **Kopmannen voor de rekenmodellen worden berekend door de AI, voor 'Mijn Eigen Team' staan ze vastgeprogrammeerd in de code.**")
 
-# --- HARDCODED TEAMS & FILES ---
+# --- HARDCODED TEAMS & KOPMANNEN ---
 HARDCODED_TEAMS = {
     "Model 1": {
         "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Jonathan Milan", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Stefan Küng", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Jonas Abrahamsen", "Julian Alaphilippe", "Marc Hirschi"],
@@ -39,8 +39,11 @@ HARDCODED_TEAMS = {
     }
 }
 
-MODEL_FILES = {
-    "Mijn Eigen Team": "Mijn eigen team.csv"
+# Vul hier handmatig je kopmannen per koers in!
+MIJN_EIGEN_KOPMANNEN = {
+    "OHN": {"C1": "Mathieu van der Poel", "C2": "Tom Pidcock", "C3": "Tim Wellens"},
+    "KBK": {"C1": "Jasper Philipsen", "C2": "Jonathan Milan", "C3": "Paul Magnier"},
+    # "SB": {"C1": "Renner X", "C2": "Renner Y", "C3": "Renner Z"},
 }
 
 ALLE_KOERSEN = ["OHN", "KBK", "SB", "MSR", "E3", "GW", "DDV", "RVV", "PR", "BP", "AGR", "WP", "LBL", "EF"]
@@ -139,29 +142,19 @@ else:
                     
                     c1, c2, c3 = None, None, None
                     
-                    # 1. Alleen voor "Mijn Eigen Team": Haal kopmannen uit de CSV
+                    # 1. Haal specifieke kopmannen op voor "Mijn Eigen Team"
                     if model_naam == "Mijn Eigen Team":
-                        csv_file = MODEL_FILES.get(model_naam)
-                        if csv_file and os.path.exists(csv_file):
-                            try:
-                                df_model = pd.read_csv(csv_file)
-                                if koers in df_model.columns:
-                                    c1_row = df_model[df_model[koers] == 'Kopman 1']
-                                    c2_row = df_model[df_model[koers] == 'Kopman 2']
-                                    c3_row = df_model[df_model[koers] == 'Kopman 3']
-                                    
-                                    c1_intended = c1_row['Renner'].values[0] if not c1_row.empty else None
-                                    c2_intended = c2_row['Renner'].values[0] if not c2_row.empty else None
-                                    c3_intended = c3_row['Renner'].values[0] if not c3_row.empty else None
-                                    
-                                    # Bevestig of de geplande kopman daadwerkelijk is gestart
-                                    if c1_intended in beschikbare_renners: c1 = c1_intended
-                                    if c2_intended in beschikbare_renners: c2 = c2_intended
-                                    if c3_intended in beschikbare_renners: c3 = c3_intended
-                            except Exception:
-                                pass
+                        geplande_kopmannen = MIJN_EIGEN_KOPMANNEN.get(koers, {})
+                        c1_intended = geplande_kopmannen.get("C1")
+                        c2_intended = geplande_kopmannen.get("C2")
+                        c3_intended = geplande_kopmannen.get("C3")
+                        
+                        # Bevestig of de geplande kopman daadwerkelijk is gestart
+                        if c1_intended in beschikbare_renners: c1 = c1_intended
+                        if c2_intended in beschikbare_renners: c2 = c2_intended
+                        if c3_intended in beschikbare_renners: c3 = c3_intended
                             
-                    # 2. Vul ontbrekende kopmannen (of DNS) aan o.b.v. hoogste stat (Voor de overige modellen gebeurt dit altijd)
+                    # 2. Vul ontbrekende kopmannen (of DNS) aan o.b.v. hoogste stat (Voor rekenmodellen gebeurt dit altijd volledig)
                     team_stats = df_stats[df_stats['Renner'].isin(beschikbare_renners)].copy()
                     team_stats = team_stats.sort_values(by=koers_stat, ascending=False).reset_index(drop=True)
                     
@@ -281,7 +274,7 @@ else:
             st.divider()
             
             # Gekozen kopmannen
-            st.subheader("🎯 Kopmannen per Koers (AI voor Modellen, CSV voor Eigen Team)")
+            st.subheader("🎯 Kopmannen per Koers (AI voor Modellen, Eigen keuze voor Eigen Team)")
             df_kopmannen = df_res[['Koers', 'Model', 'C1 (3x)', 'C2 (2.5x)', 'C3 (2x)']]
             df_kopmannen['Koers_Index'] = df_kopmannen['Koers'].apply(lambda x: verreden_koersen.index(x))
             df_kopmannen = df_kopmannen.sort_values(by=['Koers_Index', 'Model']).drop(columns=['Koers_Index'])
