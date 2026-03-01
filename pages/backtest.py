@@ -44,13 +44,18 @@ ALLE_KOERSEN = ["OHN", "KBK", "SB", "MSR", "E3", "GW", "DDV", "RVV", "PR", "BP",
 STAT_MAPPING = {"OHN": "COB", "KBK": "SPR", "SB": "HLL", "MSR": "SPR", "E3": "COB", "GW": "SPR", "DDV": "COB", "RVV": "COB", "PR": "COB", "BP": "HLL", "AGR": "HLL", "WP": "HLL", "LBL": "HLL", "EF": "SPR"}
 LATE_SEASON_KOERSEN = ["BP", "AGR", "WP", "LBL", "EF"]
 
-SCORITO_PUNTEN = {1: 100, 2: 80, 3: 70, 4: 60, 5: 50, 6: 44, 7: 40, 8: 36, 9: 32, 10: 28, 11: 24, 12: 20, 13: 16, 14: 14, 15: 12, 16: 10, 17: 8, 18: 6, 19: 4, 20: 2}
-TEAMPUNTEN = {1: 10, 2: 8, 3: 6}
+# Nieuwe puntenverdeling
+SCORITO_PUNTEN = {
+    1: 100, 2: 90, 3: 80, 4: 70, 5: 64, 6: 60, 7: 56, 8: 52, 9: 48, 10: 44,
+    11: 40, 12: 36, 13: 32, 14: 28, 15: 24, 16: 20, 17: 16, 18: 12, 19: 8, 20: 4
+}
+# Nieuwe teampunten
+TEAMPUNTEN = {1: 30, 2: 20, 3: 10}
 
 # --- DATA LADEN ---
 @st.cache_data
 def load_data():
-    df_stats = pd.read_csv("renners_stats.csv", sep='\t') # Bron: renners_stats.csv
+    df_stats = pd.read_csv("renners_stats.csv", sep='\t')
     if 'Naam' in df_stats.columns:
         df_stats = df_stats.rename(columns={'Naam': 'Renner'})
     return df_stats
@@ -107,7 +112,7 @@ st.divider()
 if not os.path.exists("uitslagen.csv"):
     st.info("Voeg hierboven een uitslag toe om de grafiek te genereren.")
 else:
-    df_uitslagen = pd.read_csv("uitslagen.csv") # Bron: lokaal gegenereerd bestand
+    df_uitslagen = pd.read_csv("uitslagen.csv")
     verreden_koersen = [k for k in ALLE_KOERSEN if k in df_uitslagen['Koers'].unique()]
     
     if not verreden_koersen:
