@@ -59,9 +59,9 @@ MIJN_EIGEN_KOPMANNEN = {
     "KBK": {"C1": "Jonathan Milan", "C2": "Jasper Philipsen", "C3": "Jordi Meeus"},
 }
 
-ALLE_KOERSEN = ["OHN", "KBK", "SB", "PN", "TA", "MSR", "BDP", "E3", "GW", "DDV", "RVV", "SP", "PR", "BP", "AGR", "WP", "LBL", "EF"]
-STAT_MAPPING = {"OHN": "COB", "KBK": "SPR", "SB": "HLL", "PN": "HLL/MTN", "TA": "SPR", "MSR": "AVG", "BDP": "SPR", "E3": "COB", "GW": "SPR", "DDV": "COB", "RVV": "COB", "SP": "SPR", "PR": "COB", "BP": "HLL", "AGR": "HLL", "WP": "HLL", "LBL": "HLL", "EF": "SPR"}
-LATE_SEASON_KOERSEN = ["BP", "AGR", "WP", "LBL", "EF"]
+ALLE_KOERSEN = ["OHN", "KBK", "SB", "PN", "TA", "MSR", "RVB", "E3", "IFF", "DDV", "RVV", "SP", "PR", "BP", "AGR", "WP", "LBL"]
+STAT_MAPPING = {"OHN": "COB", "KBK": "SPR", "SB": "HLL", "PN": "HLL/MTN", "TA": "SPR", "MSR": "AVG", "RVB": "SPR", "E3": "COB", "IFF": "SPR", "DDV": "COB", "RVV": "COB", "SP": "SPR", "PR": "COB", "BP": "HLL", "AGR": "HLL", "WP": "HLL", "LBL": "HLL"}
+LATE_SEASON_KOERSEN = ["BP", "AGR", "WP", "LBL"]
 
 SCORITO_PUNTEN = {
     1: 100, 2: 90, 3: 80, 4: 70, 5: 64, 6: 60, 7: 56, 8: 52, 9: 48, 10: 44,
