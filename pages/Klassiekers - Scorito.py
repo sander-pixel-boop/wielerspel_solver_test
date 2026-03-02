@@ -212,9 +212,12 @@ def solve_knapsack_with_transfers(dataframe, total_budget, min_budget, max_rider
             if renner in frozen_z: prob += z[i] == 1
             if renner in force_any: prob += x[i] + y[i] + z[i] == 1
 
-        prob += pulp.lpSum([x[i] for i in dataframe.index]) == max_riders - 3
-        prob += pulp.lpSum([y[i] for i in dataframe.index]) == 3
-        prob += pulp.lpSum([z[i] for i in dataframe.index]) == 3
+        # AANGEPAST: Maximaal 3 transfers, in plaats van exact 3
+        prob += pulp.lpSum([y[i] for i in dataframe.index]) <= 3
+        # Het aantal verkopen (y) moet gelijk zijn aan aantal aankopen (z)
+        prob += pulp.lpSum([y[i] for i in dataframe.index]) == pulp.lpSum([z[i] for i in dataframe.index])
+        # Je startteam is de basis (x) + je vroege renners (y) die je later verkoopt
+        prob += pulp.lpSum([x[i] for i in dataframe.index]) + pulp.lpSum([y[i] for i in dataframe.index]) == max_riders
         
         prob += pulp.lpSum([(x[i] + y[i]) * dataframe.loc[i, 'Prijs'] for i in dataframe.index]) <= total_budget
         prob += pulp.lpSum([(x[i] + z[i]) * dataframe.loc[i, 'Prijs'] for i in dataframe.index]) <= total_budget
@@ -245,7 +248,9 @@ def solve_knapsack_with_transfers(dataframe, total_budget, min_budget, max_rider
             if renner in exclude_list: prob += rider_vars[i] == 0
             if renner in frozen_x: prob += rider_vars[i] == 1
             if renner in force_any: prob += rider_vars[i] == 1
+        
         prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=15))
+        
         if pulp.LpStatus[prob.status] == 'Optimal':
             selected = [dataframe.loc[i, 'Renner'] for i in dataframe.index if rider_vars[i].varValue > 0.5]
             return selected[:max_riders], None
@@ -279,7 +284,7 @@ with st.sidebar:
             skip_races = actieve_koersen
 
     ev_method = st.selectbox("🧮 Rekenmodel (EV)", ["1. Scorito Ranking (Dynamisch)", "2. Originele Curve (Macht 4)", "3. Extreme Curve (Macht 10)", "4. Tiers & Spreiding (Realistisch)"])
-    use_transfers = st.checkbox("🔁 Bereken met 3 wissels (Parijs-Roubaix)", value=True)
+    use_transfers = st.checkbox("🔁 Bereken wissel-strategie (Parijs-Roubaix)", value=True)
     
     with st.expander("⚙️ Budget & Limieten", expanded=False):
         max_ren = st.number_input("Totaal aantal renners", value=20)
@@ -292,27 +297,26 @@ with st.sidebar:
 
     ziekenboeg = []
     if use_transfers:
-        with st.expander("🚑 Blessures & Noodwissels (Midden in het spel)", expanded=False):
-            st.info("Is de Omloop al gereden? Zet je 20 renners vast. Geef blessures door en laat de AI direct de beste wissel-aanpassingen doorrekenen.")
+        with st.expander("🚑 Blessures & Noodwissels (Tijdens het spel)", expanded=False):
+            st.info("Zet je 20 renners vast als het spel is gestart. Geef blessures door (EV = 0) en laat de AI direct je optimale wissels berekenen!")
             game_locked = st.checkbox("🔒 Start-team is vast (Spel is begonnen)")
             
             if game_locked:
                 if len(st.session_state.selected_riders) == max_ren:
                     current_20 = st.session_state.selected_riders
                     
-                    ziekenboeg = st.multiselect("🤕 Ziekenboeg (Zet EV op 0):", options=current_20, help="Gevallen renners scoren geen punten meer in de nabije toekomst. Hun verwachte waarde wordt gedropt naar nul.")
+                    ziekenboeg = st.multiselect("🤕 Ziekenboeg (Zet EV op 0):", options=current_20, help="Gevallen renners scoren geen punten meer in de nabije toekomst. Hun verwachte waarde wordt gedropt naar nul zodat de AI ze waarschijnlijk verkoopt.")
                     
                     default_uit = []
                     if st.session_state.transfer_plan and 'uit' in st.session_state.transfer_plan:
                         default_uit = [r for r in st.session_state.transfer_plan['uit'] if r in current_20]
                     
-                    sell_riders = st.multiselect("❌ Forceer verkoop na PR (1 tot 3):", options=current_20, default=default_uit[:3], max_selections=3, help="Kies specifieke renners (bijv. geblesseerden) die je ZEKER wilt verkopen. De AI vult de overige transfers optimaal aan tot exact 3 wissels.")
+                    sell_riders = st.multiselect("❌ Forceer verkoop na PR (Max 3):", options=current_20, default=default_uit[:3], max_selections=3, help="Kies eventueel zélf renners die je definitief wilt verkopen. Laat leeg om de AI vrij te laten nadenken.")
                     
                     if st.button("🔄 Herbereken Noodwissels", use_container_width=True, type="secondary"):
                         for z in ziekenboeg:
                             df.loc[df['Renner'] == z, ['EV_early', 'EV_late', 'Scorito_EV', 'Waarde (EV/M)']] = 0
                             
-                        # Start 20 forceren, anderen buiten sluiten
                         force_early_locked = current_20
                         ban_early_locked = [r for r in df['Renner'].tolist() if r not in current_20]
                         frozen_y_locked = sell_riders
@@ -437,8 +441,13 @@ with tab1:
             if st.session_state.transfer_plan:
                 st.markdown("**🔁 Wissel-Strategie na Parijs-Roubaix**")
                 c_uit, c_in = st.columns(2)
-                with c_uit: st.error("❌ **Verkopen:**\n" + "\n".join([f"- {r}" for r in st.session_state.transfer_plan['uit']]))
-                with c_in: st.success("📥 **Inkopen:**\n" + "\n".join([f"- {r}" for r in st.session_state.transfer_plan['in']]))
+                
+                aantal_wissels = len(st.session_state.transfer_plan['uit'])
+                if aantal_wissels > 0:
+                    with c_uit: st.error("❌ **Verkopen:**\n" + "\n".join([f"- {r}" for r in st.session_state.transfer_plan['uit']]))
+                    with c_in: st.success("📥 **Inkopen:**\n" + "\n".join([f"- {r}" for r in st.session_state.transfer_plan['in']]))
+                else:
+                    st.info("De AI heeft berekend dat **0 wissels** de beste strategie is voor jouw team!")
 
         matrix_df_check = current_df[['Renner', 'Rol', 'Type', 'Prijs'] + race_cols].set_index('Renner')
         active_matrix_check = matrix_df_check.copy()
@@ -724,9 +733,9 @@ with tab4:
     
     ### 🔁 3. De Wisselstrategie (Transfers)
     De solver kijkt verder dan alleen de start. Hij splitst het seizoen in twee fasen:
-    * **Basis (17 renners):** Renners die het hele seizoen in je team blijven.
-    * **Early (3 renners):** Specialisten voor de kasseien die je na Parijs-Roubaix verkoopt.
-    * **Late (3 renners):** Heuvelspecialisten die je pas na Parijs-Roubaix inkoopt.
+    * **Basis (minimaal 17 renners):** Renners die het hele seizoen in je team blijven.
+    * **Early (maximaal 3 renners):** Specialisten voor de kasseien die je na Parijs-Roubaix verkoopt.
+    * **Late (maximaal 3 renners):** Heuvelspecialisten die je pas na Parijs-Roubaix inkoopt.
     
     De AI garandeert dat je budget na Parijs-Roubaix nog steeds klopt wanneer je de dure kasseivreters inruilt voor klimmers.
 
@@ -740,5 +749,5 @@ with tab4:
     Is de Omloop al gereden en heb je plotseling een geblesseerde renner in de selectie (zoals Wellens in KBK)? Gebruik de **Noodwissels** optie in het menu:
     1. Vink aan dat het spel is begonnen (Zet je 20 renners vast).
     2. Zet eventuele geblesseerde renners in de ziekenboeg zodat ze niet meer meetellen in de verwachte punten.
-    3. Selecteer 1, 2 of 3 renners die je definitief wilt verkopen. De AI berekent direct de best mogelijke vervangers én kiest eventuele overige renners uit je kern die ook beter verkocht kunnen worden!
+    3. De AI berekent nu **direct** zelf hoeveel transfers logisch zijn (0, 1, 2 of 3) en kiest de beste vervangers binnen je restbudget! Wil je een specifieke renner geforceerd verkopen? Dan selecteer je hem handmatig in het verkooplijstje.
     """)
