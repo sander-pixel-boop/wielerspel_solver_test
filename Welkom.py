@@ -34,16 +34,21 @@ def home_page():
 home = st.Page(home_page, title="Home", icon="🏠", default=True)
 
 cf_pagina = st.Page("pages/Cycling_Fantasy.py", title="CF Dashboard", icon="🚴")
+
 scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassieker App", icon="🏆")
 scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Model Evaluator", icon="📊")
-sporza_pagina = st.Page("pages/Klassiekers - Sporza.py", title="Sporza Dashboard", icon="🏁")
+scorito_grand_tour = st.Page("pages/Scorito_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
+
+sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="[WIP] Sporza Klassiekers", icon="🏁")
+sporza_grand_tour = st.Page("pages/Sporza_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
+sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="[Binnenkort] Model Evaluator", icon="📊")
 
 # 3. Groepeer de navigatie voor de sidebar
 pg = st.navigation({
     "Info": [home],
     "Cycling Fantasy": [cf_pagina],
-    "Scorito": [scorito_klassiekers, scorito_evaluator],
-    "Sporza": [sporza_pagina]
+    "Scorito": [scorito_klassiekers, scorito_evaluator, scorito_grand_tour],
+    "Sporza": [sporza_klassiekers, sporza_grand_tour, sporza_evaluator]
 })
 
 # 4. Voer de applicatie uit
