@@ -11,15 +11,24 @@ def home_page():
 
     st.markdown(
         """
-        Dit is jouw centrale dashboard voor het berekenen van de ultieme selecties voor de voorjaarsklassiekers en grote ronden.
+        Dit is jouw centrale dashboard voor het berekenen van de ultieme selecties voor wielerspellen.
         
         👈 **Kies een spel in het menu aan de linkerkant om te beginnen!**
         
-        ### Beschikbare Solvers:
-        * **Scorito Klassiekers:** Optimaliseer je selectie met het 45M budget en bereken de perfecte wisselstrategie na Parijs-Roubaix.
-        * **Cycling Fantasy:** Bereken het optimale dagteam per koers op basis van ingeladen PCS-startlijsten en de vaste actuele credits.
-        * **🚧 WORK IN PROGRESS (WIP) 🚧 Sporza Wielermanager:** Bouw je team binnen de limieten van 120M, 20 renners en maximaal 4 per ploeg.
-        * *Binnenkort: Scorito en Sporza voor de Grote Ronden!*
+        ### Beschikbare Solvers & Modules:
+        
+        **Cycling Fantasy**
+        * **CF Dashboard:** Bereken het optimale dagteam per koers op basis van ingeladen PCS-startlijsten en de actuele credits.
+        
+        **Scorito**
+        * **Klassiekers:** Optimaliseer je selectie met het 45M budget en bereken de perfecte wisselstrategie na Parijs-Roubaix.
+        * **Grand Tour:** *(Binnenkort)* Bereken je ideale selectie voor de grote rondes.
+        * **Evaluator:** Test en vergelijk live hoe verschillende wiskundige modellen presteren ten opzichte van jouw eigen selectie.
+
+        **Sporza**
+        * **Klassiekers:** 🚧 *(WIP)* Bouw je team binnen de limieten van 120M, 20 renners en maximaal 4 per ploeg.
+        * **Grand Tour:** *(Binnenkort)* Optimaliseer je Sporza-team voor de grote rondes.
+        * **Evaluator:** *(Binnenkort)* Test en vergelijk Sporza modellen in de praktijk.
         
         ---
         
@@ -30,24 +39,24 @@ def home_page():
         """
     )
 
-# 2. Definieer alle pagina's met de juiste bestandsnamen
+# 2. Definieer alle pagina's met de exacte, eenduidige bestandsnamen en titels
 home = st.Page(home_page, title="Home", icon="🏠", default=True)
 
 cf_pagina = st.Page("pages/Cycling_Fantasy.py", title="CF Dashboard", icon="🚴")
 
-scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassieker App", icon="🏆")
-scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Model Evaluator", icon="📊")
-scorito_grand_tour = st.Page("pages/Scorito_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
+scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassiekers", icon="🏆")
+scorito_grand_tour = st.Page("pages/Scorito_Grand_Tour.py", title="Grand Tour", icon="⛰️")
+scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Evaluator", icon="📊")
 
-sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="[WIP] Sporza Klassiekers", icon="🏁")
-sporza_grand_tour = st.Page("pages/Sporza_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
-sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="[Binnenkort] Model Evaluator", icon="📊")
+sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="Klassiekers", icon="🏁")
+sporza_grand_tour = st.Page("pages/Sporza_Grand_Tour.py", title="Grand Tour", icon="⛰️")
+sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="Evaluator", icon="📊")
 
 # 3. Groepeer de navigatie voor de sidebar
 pg = st.navigation({
     "Info": [home],
     "Cycling Fantasy": [cf_pagina],
-    "Scorito": [scorito_klassiekers, scorito_evaluator, scorito_grand_tour],
+    "Scorito": [scorito_klassiekers, scorito_grand_tour, scorito_evaluator],
     "Sporza": [sporza_klassiekers, sporza_grand_tour, sporza_evaluator]
 })
 
