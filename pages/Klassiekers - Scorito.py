@@ -279,6 +279,41 @@ with st.sidebar:
         ban_early = st.multiselect("🔴 Niet als basis (evt wissel):", options=[r for r in df['Renner'].tolist() if r not in force_early])
         exclude_list = st.multiselect("🚫 Compleet negeren:", options=[r for r in df['Renner'].tolist() if r not in force_early + ban_early])
 
+    if use_transfers:
+        with st.expander("🚑 Blessures & Noodwissels (Tijdens het spel)", expanded=False):
+            st.info("Is de Omloop al gereden? Zet je 20 renners vast en bereken alleen de 3 nieuwe wissels voor na Parijs-Roubaix (bijv. bij een blessure).")
+            game_locked = st.checkbox("🔒 Start-team is vast (Spel is begonnen)")
+            
+            if game_locked:
+                if len(st.session_state.selected_riders) == max_ren:
+                    current_20 = st.session_state.selected_riders
+                    
+                    default_uit = []
+                    if st.session_state.transfer_plan and 'uit' in st.session_state.transfer_plan:
+                        default_uit = [r for r in st.session_state.transfer_plan['uit'] if r in current_20]
+                    
+                    sell_riders = st.multiselect("❌ Verkopen na PR (Kies er exact 3):", options=current_20, default=default_uit[:3], max_selections=3)
+                    
+                    if st.button("🔄 Herbereken Noodwissels", use_container_width=True, type="secondary"):
+                        if len(sell_riders) == 3:
+                            frozen_x_locked = [r for r in current_20 if r not in sell_riders]
+                            frozen_y_locked = sell_riders
+                            ban_early_locked = [r for r in df['Renner'].tolist() if r not in current_20]
+                            
+                            res, transfer_plan = solve_knapsack_with_transfers(
+                                df, max_bud, min_bud, max_ren, min_per_koers, [], ban_early_locked, exclude_list, frozen_x_locked, frozen_y_locked, [], [], early_races, late_races, True
+                            )
+                            if res:
+                                st.session_state.selected_riders = res
+                                st.session_state.transfer_plan = transfer_plan
+                                st.rerun()
+                            else:
+                                st.error("Geen geldige wissels mogelijk met het resterende budget.")
+                        else:
+                            st.warning("Selecteer exact 3 renners om te verkopen.")
+                else:
+                    st.warning("Bereken of laad eerst je team van 20 renners in.")
+
     st.write("")
     if st.button("🚀 BEREKEN OPTIMAAL TEAM", type="primary", use_container_width=True):
         st.session_state.last_finetune = None
@@ -663,8 +698,6 @@ with tab4:
     * **Specialisaties:** Elke koers heeft een primair profiel (bijv. Roubaix = `COB`, Amstel = `HLL`).
     * **Kopman Bonus:** De AI berekent per koers wie je 3 beste renners zijn en geeft hen een factor (3x, 2.5x en 2x). Dit is cruciaal omdat kopmannen het verschil maken in Scorito.
     
-    
-
     ### 🔁 3. De Wisselstrategie (Transfers)
     De solver kijkt verder dan alleen de start. Hij splitst het seizoen in twee fasen:
     * **Basis (17 renners):** Renners die het hele seizoen in je team blijven.
@@ -678,4 +711,10 @@ with tab4:
     * **Normalisatie:** Haalt tekens zoals `ü` of `é` weg voor de vergelijking.
     * **Fuzzy Matching:** Als namen 80% overeenkomen, worden ze automatisch gekoppeld.
     * **Manual Overrides:** Handmatige correcties voor complexe namen (bijv. "Kung" naar "Stefan Küng").
+    
+    ### 🚑 5. Noodwissels Tijdens het Spel
+    Is de Omloop al gereden en heb je plotseling een geblesseerde renner in de selectie (zoals Wout van Aert in 2024)? Gebruik de **Noodwissels** optie in het menu:
+    1. Vink aan dat het spel is begonnen (Zet je 20 renners vast).
+    2. Selecteer de geblesseerde renner(s) die je na Parijs-Roubaix gedwongen moet verkopen.
+    3. De AI berekent direct de best mogelijke vervangers binnen het vastgezette budget!
     """)
