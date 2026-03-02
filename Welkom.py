@@ -30,14 +30,13 @@ def home_page():
         """
     )
 
-# 2. Definieer alle pagina's
+# 2. Definieer alle pagina's met de juiste bestandsnamen
 home = st.Page(home_page, title="Home", icon="🏠", default=True)
 
-# Let op: vul hieronder jouw eigen bestandsnamen in!
-cf_pagina = st.Page("pages/naam_van_cf_bestand.py", title="CF Dashboard", icon="🚴")
-scorito_klassiekers = st.Page("pages/naam_van_klassieker_bestand.py", title="Klassieker App", icon="🏆")
+cf_pagina = st.Page("pages/Cycling_Fantasy.py", title="CF Dashboard", icon="🚴")
+scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassieker App", icon="🏆")
 scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Model Evaluator", icon="📊")
-sporza_pagina = st.Page("pages/naam_van_sporza_bestand.py", title="Sporza Dashboard", icon="🏁")
+sporza_pagina = st.Page("pages/Klassiekers - Sporza.py", title="Sporza Dashboard", icon="🏁")
 
 # 3. Groepeer de navigatie voor de sidebar
 pg = st.navigation({
