@@ -5,6 +5,7 @@ import json
 import plotly.express as px
 import plotly.graph_objects as go
 import unicodedata
+import os
 from thefuzz import process, fuzz
 
 # --- CONFIGURATIE ---
@@ -14,18 +15,27 @@ st.set_page_config(page_title="Scorito Klassiekers AI", layout="wide", page_icon
 def normalize_name_logic(text):
     if not isinstance(text, str):
         return ""
-    # Omzetten naar kleine letters en witruimte trimmen
     text = text.lower().strip()
-    # Normaliseer Unicode (splitst letters en accenten, bijv. 'ü' -> 'u' + '¨')
     nfkd_form = unicodedata.normalize('NFKD', text)
-    # Behoud alleen de basis karakters (geen accent-tekens)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+
+# --- HULPFUNCTIE: UITSLAGEN LEZEN ---
+def get_verreden_koersen():
+    if os.path.exists("uitslagen.csv"):
+        try:
+            df_u = pd.read_csv("uitslagen.csv", sep='\t', engine='python')
+            if 'Race' not in df_u.columns:
+                df_u = pd.read_csv("uitslagen.csv", sep=None, engine='python')
+            if 'Race' in df_u.columns:
+                return [str(x).strip().upper() for x in df_u['Race'].unique()]
+        except:
+            pass
+    return []
 
 # --- DATA LADEN (KLASSIEKERS SCORITO) ---
 @st.cache_data
 def load_and_merge_data():
     try:
-        # 1. Programma inladen (met utf-8-sig voor Excel-compatibiliteit)
         df_prog = pd.read_csv("bron_startlijsten.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
         df_prog = df_prog.rename(columns={'RvB': 'BDP', 'IFF': 'GW'})
         
@@ -42,7 +52,6 @@ def load_and_merge_data():
             df_prog['Prijs'] = df_prog['Prijs'].fillna(0)
             df_prog.loc[df_prog['Prijs'] == 800000, 'Prijs'] = 750000
         
-        # 2. Stats inladen
         df_stats = pd.read_csv("renners_stats.csv", sep='\t', encoding='utf-8-sig') 
         if 'Naam' in df_stats.columns:
             df_stats = df_stats.rename(columns={'Naam': 'Renner'})
@@ -52,11 +61,9 @@ def load_and_merge_data():
             
         df_stats = df_stats.drop_duplicates(subset=['Renner'], keep='first')
         
-        # 3. VERBETERDE NAAM MATCHING (Inclusief Küng/Gregoire fix)
         short_names = df_prog['Renner'].unique()
         full_names = df_stats['Renner'].unique()
         
-        # Maak een dictionary voor snelle terugkoppeling van genormaliseerd naar origineel
         norm_to_full = {normalize_name_logic(n): n for n in full_names}
         norm_full_names = list(norm_to_full.keys())
         
@@ -73,12 +80,9 @@ def load_and_merge_data():
             if short in manual_overrides:
                 name_mapping[short] = manual_overrides[short]
             else:
-                # Gebruik normalisatie voor de fuzzy match
                 norm_short = normalize_name_logic(short)
                 match_res = process.extractOne(norm_short, norm_full_names, scorer=fuzz.token_set_ratio)
-                
                 if match_res and match_res[1] > 75:
-                    # Koppel de korte naam aan de originele database naam (met accenten)
                     name_mapping[short] = norm_to_full[match_res[0]]
                 else:
                     name_mapping[short] = short
@@ -114,7 +118,6 @@ def load_and_merge_data():
             merged_df['Team'] = merged_df['Team'].fillna('Onbekend')
         
         merged_df['Total_Races'] = merged_df[available_races].sum(axis=1).astype(int)
-        
         koers_stat_map = {'OHN':'COB','KBK':'SPR','SB':'HLL','PN':'HLL/MTN','TA':'SPR','MSR':'AVG','BDP':'SPR','E3':'COB','GW':'SPR','DDV':'COB','RVV':'COB','SP':'SPR','PR':'COB','BP':'HLL','AGR':'HLL','WP':'HLL','LBL':'HLL'}
         
         return merged_df, available_early, available_late, koers_stat_map
@@ -122,7 +125,7 @@ def load_and_merge_data():
         st.error(f"Fout in dataverwerking: {e}")
         return pd.DataFrame(), [], [], {}
 
-def calculate_ev(df, early_races, late_races, koers_stat_map, method):
+def calculate_ev(df, early_races, late_races, koers_stat_map, method, skip_races=[]):
     df = df.copy()
     df['EV_early'] = 0.0
     df['EV_late'] = 0.0
@@ -157,8 +160,10 @@ def calculate_ev(df, early_races, late_races, koers_stat_map, method):
             race_ev.loc[idx] = val
         return race_ev
 
-    for koers in early_races: df['EV_early'] += get_race_ev(koers)
-    for koers in late_races: df['EV_late'] += get_race_ev(koers)
+    for koers in early_races: 
+        if koers not in skip_races: df['EV_early'] += get_race_ev(koers)
+    for koers in late_races: 
+        if koers not in skip_races: df['EV_late'] += get_race_ev(koers)
         
     df['EV_early'] = df['EV_early'].fillna(0).round(0).astype(int)
     df['EV_late'] = df['EV_late'].fillna(0).round(0).astype(int)
@@ -263,6 +268,16 @@ if "last_finetune" not in st.session_state: st.session_state.last_finetune = Non
 with st.sidebar:
     st.title("🏆 AI Coach")
     
+    # Check verreden koersen via uitslagen.csv
+    verreden_races = get_verreden_koersen()
+    actieve_koersen = [k for k in race_cols if k in verreden_races]
+    skip_races = []
+    
+    if actieve_koersen:
+        st.success(f"✅ Gereden koersen gedetecteerd (t/m {actieve_koersen[-1]})")
+        if st.checkbox("🔮 Toon alleen Resterende EV", value=True, help="Negeer behaalde punten. Handig om te focussen op renners die vanaf nu de meeste waarde opleveren."):
+            skip_races = actieve_koersen
+
     ev_method = st.selectbox("🧮 Rekenmodel (EV)", ["1. Scorito Ranking (Dynamisch)", "2. Originele Curve (Macht 4)", "3. Extreme Curve (Macht 10)", "4. Tiers & Spreiding (Realistisch)"])
     use_transfers = st.checkbox("🔁 Bereken met 3 wissels (Parijs-Roubaix)", value=True)
     
@@ -272,50 +287,59 @@ with st.sidebar:
         min_bud = st.number_input("Min Budget", value=43000000, step=500000)
         min_per_koers = st.slider("Min. renners per koers", 0, 15, 3)
         
-    df = calculate_ev(df_raw, early_races, late_races, koers_mapping, ev_method)
-    
-    with st.expander("🔒 Renners Forceren / Uitsluiten", expanded=False):
-        force_early = st.multiselect("🟢 Moet in team:", options=df['Renner'].tolist())
-        ban_early = st.multiselect("🔴 Niet als basis (evt wissel):", options=[r for r in df['Renner'].tolist() if r not in force_early])
-        exclude_list = st.multiselect("🚫 Compleet negeren:", options=[r for r in df['Renner'].tolist() if r not in force_early + ban_early])
+    # Bereken de actuele EV's
+    df = calculate_ev(df_raw, early_races, late_races, koers_mapping, ev_method, skip_races)
 
+    ziekenboeg = []
     if use_transfers:
-        with st.expander("🚑 Blessures & Noodwissels (Tijdens het spel)", expanded=False):
-            st.info("Is de Omloop al gereden? Zet je 20 renners vast en bereken alleen de 3 nieuwe wissels voor na Parijs-Roubaix (bijv. bij een blessure).")
+        with st.expander("🚑 Blessures & Noodwissels (Midden in het spel)", expanded=False):
+            st.info("Is de Omloop al gereden? Zet je 20 renners vast. Geef blessures door en laat de AI direct de beste wissel-aanpassingen doorrekenen.")
             game_locked = st.checkbox("🔒 Start-team is vast (Spel is begonnen)")
             
             if game_locked:
                 if len(st.session_state.selected_riders) == max_ren:
                     current_20 = st.session_state.selected_riders
                     
+                    ziekenboeg = st.multiselect("🤕 Ziekenboeg (Zet EV op 0):", options=current_20, help="Gevallen renners scoren geen punten meer in de nabije toekomst. Hun verwachte waarde wordt gedropt naar nul.")
+                    
                     default_uit = []
                     if st.session_state.transfer_plan and 'uit' in st.session_state.transfer_plan:
                         default_uit = [r for r in st.session_state.transfer_plan['uit'] if r in current_20]
                     
-                    sell_riders = st.multiselect("❌ Verkopen na PR (Kies er exact 3):", options=current_20, default=default_uit[:3], max_selections=3)
+                    sell_riders = st.multiselect("❌ Forceer verkoop na PR (1 tot 3):", options=current_20, default=default_uit[:3], max_selections=3, help="Kies specifieke renners (bijv. geblesseerden) die je ZEKER wilt verkopen. De AI vult de overige transfers optimaal aan tot exact 3 wissels.")
                     
                     if st.button("🔄 Herbereken Noodwissels", use_container_width=True, type="secondary"):
-                        if len(sell_riders) == 3:
-                            frozen_x_locked = [r for r in current_20 if r not in sell_riders]
-                            frozen_y_locked = sell_riders
-                            ban_early_locked = [r for r in df['Renner'].tolist() if r not in current_20]
+                        for z in ziekenboeg:
+                            df.loc[df['Renner'] == z, ['EV_early', 'EV_late', 'Scorito_EV', 'Waarde (EV/M)']] = 0
                             
-                            res, transfer_plan = solve_knapsack_with_transfers(
-                                df, max_bud, min_bud, max_ren, min_per_koers, [], ban_early_locked, exclude_list, frozen_x_locked, frozen_y_locked, [], [], early_races, late_races, True
-                            )
-                            if res:
-                                st.session_state.selected_riders = res
-                                st.session_state.transfer_plan = transfer_plan
-                                st.rerun()
-                            else:
-                                st.error("Geen geldige wissels mogelijk met het resterende budget.")
+                        # Start 20 forceren, anderen buiten sluiten
+                        force_early_locked = current_20
+                        ban_early_locked = [r for r in df['Renner'].tolist() if r not in current_20]
+                        frozen_y_locked = sell_riders
+                        
+                        res, transfer_plan = solve_knapsack_with_transfers(
+                            df, max_bud, min_bud, max_ren, min_per_koers, force_early_locked, ban_early_locked, [], [], frozen_y_locked, [], [], early_races, late_races, True
+                        )
+                        if res:
+                            st.session_state.selected_riders = res
+                            st.session_state.transfer_plan = transfer_plan
+                            st.rerun()
                         else:
-                            st.warning("Selecteer exact 3 renners om te verkopen.")
+                            st.error("Geen geldige wissels mogelijk. Het budget is overschreden door je vaste kern.")
                 else:
-                    st.warning("Bereken of laad eerst je team van 20 renners in.")
+                    st.warning("Bereken of laad eerst je complete team van 20 renners in via 'Oude Teams Inladen'.")
+
+    # Pas de ziekenboeg EV permanent toe op het actieve dataframe (zodat het ook in de tabellen direct weerspiegelt)
+    for z in ziekenboeg:
+        df.loc[df['Renner'] == z, ['EV_early', 'EV_late', 'Scorito_EV', 'Waarde (EV/M)']] = 0
+
+    with st.expander("🔒 Renners Forceren / Uitsluiten", expanded=False):
+        force_early = st.multiselect("🟢 Moet in team:", options=df['Renner'].tolist())
+        ban_early = st.multiselect("🔴 Niet als basis (evt wissel):", options=[r for r in df['Renner'].tolist() if r not in force_early])
+        exclude_list = st.multiselect("🚫 Compleet negeren:", options=[r for r in df['Renner'].tolist() if r not in force_early + ban_early])
 
     st.write("")
-    if st.button("🚀 BEREKEN OPTIMAAL TEAM", type="primary", use_container_width=True):
+    if st.button("🚀 BEREKEN VOLLEDIG NIEUW TEAM", type="primary", use_container_width=True):
         st.session_state.last_finetune = None
         res, transfer_plan = solve_knapsack_with_transfers(
             df, max_bud, min_bud, max_ren, min_per_koers, force_early, ban_early, exclude_list, [], [], [], [], early_races, late_races, use_transfers
@@ -713,8 +737,8 @@ with tab4:
     * **Manual Overrides:** Handmatige correcties voor complexe namen (bijv. "Kung" naar "Stefan Küng").
     
     ### 🚑 5. Noodwissels Tijdens het Spel
-    Is de Omloop al gereden en heb je plotseling een geblesseerde renner in de selectie (zoals Wout van Aert in 2024)? Gebruik de **Noodwissels** optie in het menu:
+    Is de Omloop al gereden en heb je plotseling een geblesseerde renner in de selectie (zoals Wellens in KBK)? Gebruik de **Noodwissels** optie in het menu:
     1. Vink aan dat het spel is begonnen (Zet je 20 renners vast).
-    2. Selecteer de geblesseerde renner(s) die je na Parijs-Roubaix gedwongen moet verkopen.
-    3. De AI berekent direct de best mogelijke vervangers binnen het vastgezette budget!
+    2. Zet eventuele geblesseerde renners in de ziekenboeg zodat ze niet meer meetellen in de verwachte punten.
+    3. Selecteer 1, 2 of 3 renners die je definitief wilt verkopen. De AI berekent direct de best mogelijke vervangers én kiest eventuele overige renners uit je kern die ook beter verkocht kunnen worden!
     """)
