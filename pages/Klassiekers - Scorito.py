@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import unicodedata
 import os
+import itertools
 from thefuzz import process, fuzz
 
 # --- CONFIGURATIE ---
@@ -31,6 +32,19 @@ def get_verreden_koersen():
         except:
             pass
     return []
+
+# --- HULPFUNCTIE: EV EVALUATOR ---
+def evaluate_plan_ev(df_eval, base_team, plan, available_races):
+    current_active = set(base_team)
+    totaal = 0
+    for race in available_races:
+        for t in plan:
+            if t['moment'] == race:
+                if t['uit'] in current_active: current_active.remove(t['uit'])
+                current_active.add(t['in'])
+        for r in current_active:
+            totaal += df_eval.loc[df_eval['Renner'] == r, f'EV_{race}'].values[0]
+    return totaal
 
 # --- DATA LADEN ---
 @st.cache_data
@@ -308,28 +322,53 @@ with st.sidebar:
                         auto_drop.append(i)
                         
                 for idx in sorted(auto_drop, reverse=True):
-                    st.write(f"💡 *Geplande verkoop van {planned_transfers_copy[idx]['uit']} (na {planned_transfers_copy[idx]['moment']}) vervalt automatisch ter compensatie.*")
+                    st.write(f"💡 *Geplande verkoop van {planned_transfers_copy[idx]['uit']} vervalt automatisch ter compensatie.*")
                     planned_transfers_copy.pop(idx)
                     
-                drop_choice = None
-                if len(planned_transfers_copy) + len(injured_selection) > 3:
-                    st.warning("🚨 Je overschrijdt het maximum van 3 wissels! Opofferen:")
-                    opts = {i: f"{t['uit']} -> {t['in']} (na {t['moment']})" for i, t in enumerate(planned_transfers_copy)}
-                    drop_choice = st.selectbox("Annuleer deze geplande wissel voor je Noodwissel:", options=list(opts.keys()), format_func=lambda x: opts[x])
+                drops_needed = (len(planned_transfers_copy) + len(injured_selection)) - 3
+                
+                ai_auto_drop = False
+                drop_choices = []
+                if drops_needed > 0:
+                    st.warning(f"🚨 Je overschrijdt de limiet (max 3). Er moeten {drops_needed} geplande wissel(s) vervallen.")
+                    ai_auto_drop = st.checkbox("🤖 Laat de AI de minst pijnlijke wissel(s) opofferen", value=True)
+                    if not ai_auto_drop:
+                        opts = {i: f"{t['uit']} -> {t['in']} (na {t['moment']})" for i, t in enumerate(planned_transfers_copy)}
+                        drop_choices = st.multiselect("Selecteer handmatig welke wissel(s) moeten vervallen:", options=list(opts.keys()), format_func=lambda x: opts[x], max_selections=drops_needed)
                     
                 if st.button("Vind & Voer Wissel Uit", type="primary", use_container_width=True):
-                    if drop_choice is not None:
-                        planned_transfers_copy.pop(drop_choice)
-                        
-                    replacements = find_emergency_replacements(df, st.session_state.selected_riders, planned_transfers_copy, injured_selection, last_race, max_bud, available_races)
-                    
-                    if replacements:
-                        for u, i_r in zip(injured_selection, replacements):
-                            planned_transfers_copy.append({"uit": u, "in": i_r, "moment": last_race})
-                        st.session_state.transfer_plan = planned_transfers_copy
-                        st.rerun()
+                    if drops_needed > 0 and not ai_auto_drop and len(drop_choices) != drops_needed:
+                        st.error(f"Selecteer exact {drops_needed} wissel(s) om te annuleren.")
                     else:
-                        st.error("Niet genoeg budget voor een geldige vervanger!")
+                        if drops_needed > 0 and ai_auto_drop:
+                            best_ev = -1
+                            best_plan = None
+                            
+                            for drop_indices in itertools.combinations(range(len(planned_transfers_copy)), drops_needed):
+                                temp_plan = [t for i, t in enumerate(planned_transfers_copy) if i not in drop_indices]
+                                repls = find_emergency_replacements(df, st.session_state.selected_riders, temp_plan, injured_selection, last_race, max_bud, available_races)
+                                
+                                if repls:
+                                    temp_full_plan = temp_plan + [{"uit": u, "in": r, "moment": last_race} for u, r in zip(injured_selection, repls)]
+                                    ev = evaluate_plan_ev(df, st.session_state.selected_riders, temp_full_plan, available_races)
+                                    if ev > best_ev:
+                                        best_ev = ev
+                                        best_plan = temp_full_plan
+                                        
+                            if best_plan:
+                                st.session_state.transfer_plan = best_plan
+                                st.rerun()
+                            else:
+                                st.error("Geen budgettaire oplossing gevonden met deze opofferingen.")
+                        else:
+                            temp_plan = [t for i, t in enumerate(planned_transfers_copy) if i not in drop_choices]
+                            replacements = find_emergency_replacements(df, st.session_state.selected_riders, temp_plan, injured_selection, last_race, max_bud, available_races)
+                            if replacements:
+                                temp_full_plan = temp_plan + [{"uit": u, "in": r, "moment": last_race} for u, r in zip(injured_selection, replacements)]
+                                st.session_state.transfer_plan = temp_full_plan
+                                st.rerun()
+                            else:
+                                st.error("Niet genoeg budget voor een geldige vervanger!")
         else:
             st.warning("Je moet eerst een start-team berekenen of inladen.")
 
@@ -429,11 +468,7 @@ with tab1:
     m1.metric("💰 Budget over (Start)", f"€ {max_bud - start_cost:,.0f}")
     m2.metric("🚴 Renners (Start)", f"{len(st.session_state.selected_riders)} / {max_ren}")
     
-    totaal_ev = 0
-    for r in active_matrix.index:
-        for c in available_races:
-            if active_matrix.loc[r, c] == 1:
-                totaal_ev += current_df.loc[current_df['Renner'] == r, f'EV_{c}'].values[0]
+    totaal_ev = evaluate_plan_ev(df, st.session_state.selected_riders, st.session_state.transfer_plan, available_races)
                 
     m3.metric("🎯 Team EV (Totaal)", f"{totaal_ev:.0f}")
     st.divider()
