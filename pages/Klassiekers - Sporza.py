@@ -20,7 +20,9 @@ def normalize_name_logic(text):
 @st.cache_data
 def load_and_merge_data():
     try:
-        df_prog = pd.read_csv("bron_startlijsten.csv", sep='\t', engine='python', encoding='utf-8-sig')
+        # Automatische separator detectie en spaties strippen voor SPORZA bestand
+        df_prog = pd.read_csv("sporza_prijzen_startlijst.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
+        df_prog.columns = df_prog.columns.str.strip()
         
         # Kolommen hernoemen als ze niet exact matchen
         if 'Naam' in df_prog.columns and 'Renner' not in df_prog.columns:
@@ -28,11 +30,13 @@ def load_and_merge_data():
         
         # Check of data goed geladen is
         if 'Prijs' not in df_prog.columns or 'Team' not in df_prog.columns:
-            st.error("CSV-bestand mist 'Prijs' of 'Team' kolommen. Zorg voor tab-gescheiden data.")
+            st.error(f"Het bestand 'sporza_prijzen_startlijst.csv' mist 'Prijs' of 'Team' kolommen. Gevonden kolommen: {list(df_prog.columns)}")
             return pd.DataFrame(), [], {}
 
-        df_stats = pd.read_csv("renners_stats.csv", sep='\t', encoding='utf-8-sig') 
-        if 'Naam' in df_stats.columns:
+        # Voor renners_stats gebruiken we dezelfde robuuste methode
+        df_stats = pd.read_csv("renners_stats.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip') 
+        df_stats.columns = df_stats.columns.str.strip()
+        if 'Naam' in df_stats.columns and 'Renner' not in df_stats.columns:
             df_stats = df_stats.rename(columns={'Naam': 'Renner'})
             
         df_stats = df_stats.drop_duplicates(subset=['Renner'], keep='first')
@@ -72,7 +76,7 @@ def load_and_merge_data():
         merged_df = merged_df.drop_duplicates(subset=['Renner_Full'], keep='first')
         merged_df = merged_df.rename(columns={'Renner_Full': 'Renner'})
         
-        # Sporza Specifieke Koersen (Zorg dat namen in CSV matchen met deze lijst of pas lijst aan)
+        # Sporza Specifieke Koersen
         ALLE_KOERSEN = ["OML", "KBK", "SAM", "STR", "NOK", "BKC", "MSR", "RVB", "E3", "IFF", "DDV", "RVV", "SP", "PR", "RVL", "BRP", "AGT", "WAP", "LBL"]
         available_races = [k for k in ALLE_KOERSEN if k in merged_df.columns]
         
@@ -131,7 +135,6 @@ def calculate_sporza_ev(df, available_races, koers_stat_map, method):
                 val = (starters.loc[idx, stat] / 100)**4 * scorito_pts[0]
                 
             # LET OP: Kopman bonus in Sporza is een absoluut getal (30, 25, 20), geen multiplier!
-            # Voor de EV doen we een grove aanname dat de nummer 1 ook altijd kopman gemaakt wordt
             if i == 0: val += 30
             elif i == 1: val += 25
             elif i == 2: val += 20
@@ -161,7 +164,7 @@ def solve_sporza_base(df, available_races):
     for koers in available_races:
         s[koers] = pulp.LpVariable.dicts(f"Start_{koers}", df.index, cat='Binary')
     
-    # OBJECTIEF: Maximaliseer de EV van renners die *daadwerkelijk opgesteld* (s) staan, niet alleen in het team (x) zitten.
+    # OBJECTIEF: Maximaliseer de EV van renners die *daadwerkelijk opgesteld* (s) staan
     obj = 0
     for koers in available_races:
         obj += pulp.lpSum([s[koers][i] * df.loc[i, f'EV_{koers}'] for i in df.index])
@@ -184,7 +187,7 @@ def solve_sporza_base(df, available_races):
         # Een renner kan alleen starten als hij in je team zit
         for i in df.index:
             prob += s[koers][i] <= x[i]
-            # Een renner kan alleen starten als hij de koers ook echt rijdt (volgens startlijst)
+            # Een renner kan alleen starten als hij de koers ook echt rijdt
             prob += s[koers][i] <= df.loc[i, koers]
             
         # Je mag maximaal 12 renners opstellen per koers
@@ -200,7 +203,7 @@ def solve_sporza_base(df, available_races):
 df_raw, available_races, koers_mapping = load_and_merge_data()
 
 if df_raw.empty:
-    st.warning("Data is leeg of kon niet worden geladen.")
+    st.warning("Data is leeg of kon niet worden geladen. Controleer of 'sporza_prijzen_startlijst.csv' bestaat.")
     st.stop()
 
 if "selected_riders" not in st.session_state: st.session_state.selected_riders = []
@@ -246,10 +249,11 @@ else:
     # Berekening in de matrix (Max 12)
     totals_dict = {}
     for c in available_races:
+        # Bepaal welke renners aan de start staan én in de top 12 van de EV vallen
         starters = current_df[current_df[c] == 1].sort_values(by=f'EV_{c}', ascending=False).head(12)
         totals_dict[c] = str(len(starters))
         
-        # Geef de bankzitters (buiten de top 12) een ander icoon
+        # Geef de bankzitters (wel in koers, maar buiten de top 12 gehouden) een ander icoon
         for idx in current_df[current_df[c] == 1].index:
             renner = current_df.loc[idx, 'Renner']
             if renner not in starters['Renner'].values:
