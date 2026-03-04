@@ -201,19 +201,13 @@ def solve_knapsack_dynamic(df, total_budget, min_budget, max_riders, force_base,
     return []
 
 # --- NOODWISSEL SOLVER ---
-def find_emergency_replacements(df_eval, current_active_riders, injured_riders, last_race, max_budget, available_races):
-    # Bereken resterende races
+def find_emergency_replacements(df_eval, base_team, transfer_plan, injured_riders, last_race, max_budget, available_races):
+    # Exclude riders that are already ANYWHERE in our team to prevent buying Philipsen double
+    all_historical_riders = set(base_team + [t['in'] for t in transfer_plan])
+    candidates = df_eval[~df_eval['Renner'].isin(all_historical_riders)].copy()
+    
     idx = available_races.index(last_race)
     remaining_races = available_races[idx+1:]
-    
-    # Bepaal budget
-    keep_riders = [r for r in current_active_riders if r not in injured_riders]
-    budget_used = df_eval[df_eval['Renner'].isin(keep_riders)]['Prijs'].sum()
-    budget_left = max_budget - budget_used
-    
-    candidates = df_eval[~df_eval['Renner'].isin(current_active_riders)].copy()
-    
-    # EV is uitsluitend gebaseerd op resterende koersen
     candidates['EV_remaining'] = candidates[[f'EV_{r}' for r in remaining_races]].sum(axis=1)
     
     prob = pulp.LpProblem("Noodwissel", pulp.LpMaximize)
@@ -221,13 +215,39 @@ def find_emergency_replacements(df_eval, current_active_riders, injured_riders, 
     
     prob += pulp.lpSum([candidates.loc[i, 'EV_remaining'] * vars[i] for i in candidates.index])
     prob += pulp.lpSum([vars[i] for i in candidates.index]) == len(injured_riders)
-    prob += pulp.lpSum([candidates.loc[i, 'Prijs'] * vars[i] for i in candidates.index]) <= budget_left
     
+    # 1. Start budget bepalen op het moment van de val (last_race)
+    current_team = set(base_team)
+    for race in available_races[:idx+1]:
+        for t in transfer_plan:
+            if t['moment'] == race:
+                if t['uit'] in current_team: current_team.remove(t['uit'])
+                current_team.add(t['in'])
+                
+    for inj in injured_riders:
+        if inj in current_team:
+            current_team.remove(inj)
+            
+    base_cost_now = df_eval[df_eval['Renner'].isin(current_team)]['Prijs'].sum()
+    prob += base_cost_now + pulp.lpSum([candidates.loc[i, 'Prijs'] * vars[i] for i in candidates.index]) <= max_budget
+    
+    # 2. Toekomstige budget checks (indien er nog andere latere wissels stonden gepland)
+    temp_team = set(current_team)
+    for race in available_races[idx+1:]:
+        changed = False
+        for t in transfer_plan:
+            if t['moment'] == race:
+                if t['uit'] in temp_team: temp_team.remove(t['uit'])
+                temp_team.add(t['in'])
+                changed = True
+        if changed:
+            cost_future = df_eval[df_eval['Renner'].isin(temp_team)]['Prijs'].sum()
+            prob += cost_future + pulp.lpSum([candidates.loc[i, 'Prijs'] * vars[i] for i in candidates.index]) <= max_budget
+            
     prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=10))
     
     if pulp.LpStatus[prob.status] == 'Optimal':
-        replacements = [candidates.loc[i, 'Renner'] for i in candidates.index if vars[i].varValue > 0.5]
-        return replacements
+        return [candidates.loc[i, 'Renner'] for i in candidates.index if vars[i].varValue > 0.5]
     return []
 
 # --- HOOFDCODE ---
@@ -238,12 +258,6 @@ if df_raw.empty:
 
 if "selected_riders" not in st.session_state: st.session_state.selected_riders = []
 if "transfer_plan" not in st.session_state: st.session_state.transfer_plan = []
-
-# Bepaal actieve selectie inclusief transfers
-current_active_riders = list(st.session_state.selected_riders)
-for t in st.session_state.transfer_plan:
-    if t['uit'] in current_active_riders: current_active_riders.remove(t['uit'])
-    if t['in'] not in current_active_riders: current_active_riders.append(t['in'])
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -267,30 +281,57 @@ with st.sidebar:
         
     df = calculate_dynamic_ev(df_raw, available_races, koers_mapping, ev_method, skip_races)
 
-    # --- DIRECTE NOODWISSEL (NIEUW) ---
+    # --- DIRECTE NOODWISSEL FIX ---
     with st.expander("🚑 Directe Noodwissel (Blessure)", expanded=False):
-        st.info("Valt een renner uit? Bevries de rest van je team en vind direct de beste wissel op dít moment.")
+        st.info("Valt een renner uit? Vind direct de beste wissel op dít moment en blijf netjes binnen de 3-wissels limiet.")
         
         if len(st.session_state.selected_riders) > 0:
-            # Dropdown voor de laatste koers
             default_lr_idx = available_races.index(actieve_koersen[-1]) if actieve_koersen else 0
-            last_race = st.selectbox("Laatst gereden koers:", options=available_races[:-1], index=default_lr_idx)
+            last_race = st.selectbox("Laatst gereden koers (Moment van wissel):", options=available_races[:-1], index=default_lr_idx)
             
-            # Selecteer geblesseerde uit de huidig ACTIEVE renners
-            injured_selection = st.multiselect("Geblesseerde renner(s) eruit:", options=current_active_riders)
+            # Bepaal wie er PRECIES nu actief in je team zit
+            active_at_moment = list(st.session_state.selected_riders)
+            idx_last = available_races.index(last_race)
+            for t in st.session_state.transfer_plan:
+                if available_races.index(t['moment']) <= idx_last:
+                    if t['uit'] in active_at_moment: active_at_moment.remove(t['uit'])
+                    if t['in'] not in active_at_moment: active_at_moment.append(t['in'])
+                    
+            injured_selection = st.multiselect("Geblesseerde renner(s) eruit:", options=active_at_moment)
             
-            if st.button("Vind & Voer Wissel Uit", type="primary", use_container_width=True):
-                if injured_selection:
-                    replacements = find_emergency_replacements(df, current_active_riders, injured_selection, last_race, max_bud, available_races)
+            if injured_selection:
+                planned_transfers_copy = list(st.session_state.transfer_plan)
+                
+                # AUTO-CORRECTIE: Check of we deze geblesseerde renner later al zouden verkopen. Zo ja, annuleer die toekomstige wissel!
+                auto_drop = []
+                for i, t in enumerate(planned_transfers_copy):
+                    if t['uit'] in injured_selection and available_races.index(t['moment']) >= idx_last:
+                        auto_drop.append(i)
+                        
+                for idx in sorted(auto_drop, reverse=True):
+                    st.write(f"💡 *Geplande verkoop van {planned_transfers_copy[idx]['uit']} (na {planned_transfers_copy[idx]['moment']}) vervalt automatisch ter compensatie.*")
+                    planned_transfers_copy.pop(idx)
+                    
+                drop_choice = None
+                # Check of we de grens van 3 wissels overschrijden
+                if len(planned_transfers_copy) + len(injured_selection) > 3:
+                    st.warning("🚨 Je overschrijdt het maximum van 3 wissels! Opofferen:")
+                    opts = {i: f"{t['uit']} -> {t['in']} (na {t['moment']})" for i, t in enumerate(planned_transfers_copy)}
+                    drop_choice = st.selectbox("Annuleer deze geplande wissel voor je Noodwissel:", options=list(opts.keys()), format_func=lambda x: opts[x])
+                    
+                if st.button("Vind & Voer Wissel Uit", type="primary", use_container_width=True):
+                    if drop_choice is not None:
+                        planned_transfers_copy.pop(drop_choice)
+                        
+                    replacements = find_emergency_replacements(df, st.session_state.selected_riders, planned_transfers_copy, injured_selection, last_race, max_bud, available_races)
+                    
                     if replacements:
-                        for u, i in zip(injured_selection, replacements):
-                            st.session_state.transfer_plan.append({"uit": u, "in": i, "moment": last_race})
-                        st.success("Wissel succesvol doorgevoerd!")
+                        for u, i_r in zip(injured_selection, replacements):
+                            planned_transfers_copy.append({"uit": u, "in": i_r, "moment": last_race})
+                        st.session_state.transfer_plan = planned_transfers_copy
                         st.rerun()
                     else:
                         st.error("Niet genoeg budget voor een geldige vervanger!")
-                else:
-                    st.warning("Selecteer minimaal 1 renner om te wisselen.")
         else:
             st.warning("Je moet eerst een start-team berekenen of inladen.")
 
@@ -304,7 +345,7 @@ with st.sidebar:
         res = solve_knapsack_dynamic(df, max_bud, min_bud, max_ren, force_base, ban_base, exclude_list)
         if res:
             st.session_state.selected_riders = res
-            st.session_state.transfer_plan = [] # Reset wissels bij nieuw start team
+            st.session_state.transfer_plan = [] 
             st.rerun()
         else:
             st.error("Geen oplossing mogelijk met deze eisen.")
@@ -345,7 +386,7 @@ st.markdown("**Met dank aan:** [Wielerorakel.nl](https://www.cyclingoracle.com/)
 st.divider()
 
 if not st.session_state.selected_riders:
-    st.info("👈 Kies je instellingen in de zijbalk en klik op **Bereken Nieuw Start-Team** om te beginnen!")
+    st.info("👈 Kies je instellingen in de zijbalk en klik op **Bereken Nieuw Start-Team** of **Oude Teams Inladen** om te beginnen!")
     st.stop()
 
 # --- ANALYSE VERWERKEN ---
@@ -361,7 +402,6 @@ def bepaal_rol_en_moment(naam):
 current_df['Rol'] = current_df['Renner'].apply(bepaal_rol_en_moment)
 current_df['Type'] = current_df.apply(bepaal_klassieker_type, axis=1)
 
-# Active Matrix bepalen op basis van in/uit data
 matrix_df = current_df[['Renner', 'Rol', 'Type', 'Prijs'] + available_races].set_index('Renner')
 active_matrix = matrix_df.copy()
 
@@ -384,15 +424,18 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Jouw Team & Transfers", "🗓️ S
 with tab1:
     st.subheader("📊 Dashboard")
     
-    m1, m2, m3 = st.columns(3)
+    current_active_riders = list(st.session_state.selected_riders)
+    for t in st.session_state.transfer_plan:
+        if t['uit'] in current_active_riders: current_active_riders.remove(t['uit'])
+        if t['in'] not in current_active_riders: current_active_riders.append(t['in'])
+
     start_team_df = current_df[~current_df['Rol'].str.contains('Gekocht')]
-    
     current_active_cost = sum([current_df.loc[current_df['Renner'] == r, 'Prijs'].values[0] for r in current_active_riders])
     
+    m1, m2, m3 = st.columns(3)
     m1.metric("💰 Budget over (Huidig)", f"€ {max_bud - current_active_cost:,.0f}")
     m2.metric("🚴 Renners (Huidig)", f"{len(current_active_riders)} / {max_ren}")
     
-    # Exacte EV calculatie obv active matrix x per koers EV
     totaal_ev = 0
     for r in active_matrix.index:
         for c in available_races:
@@ -409,7 +452,7 @@ with tab1:
     
     with col_t2:
         c_tr_head, c_tr_btn = st.columns([3,1])
-        with c_tr_head: st.markdown("**🔁 Transfer Plan**")
+        with c_tr_head: st.markdown(f"**🔁 Transfer Plan ({len(st.session_state.transfer_plan)}/3)**")
         with c_tr_btn:
             if st.session_state.transfer_plan:
                 if st.button("🗑️ Annuleer laatste", use_container_width=True):
@@ -419,8 +462,8 @@ with tab1:
         if not st.session_state.transfer_plan:
             st.info("Nog geen transfers doorgevoerd. Gebruik 'Directe Noodwissel' in de zijbalk.")
         else:
-            for t in st.session_state.transfer_plan:
-                st.markdown(f"***Wissel ná {t['moment']}:***")
+            for i, t in enumerate(st.session_state.transfer_plan):
+                st.markdown(f"***Wissel {i+1} (ná {t['moment']}):***")
                 c_uit, c_in = st.columns(2)
                 with c_uit: st.error(f"❌ {t['uit']}")
                 with c_in: st.success(f"📥 {t['in']}")
@@ -443,7 +486,6 @@ with tab2:
     display_matrix.insert(0, 'Rol', matrix_df['Rol'])
     display_matrix.insert(1, 'Type', matrix_df['Type'])
     
-    # Visuele scheidingslijn voor de actieve wissels
     for t in st.session_state.transfer_plan:
         moment = t['moment']
         if moment in display_matrix.columns and f'🔁 {moment}' not in display_matrix.columns:
