@@ -110,9 +110,22 @@ def get_uitslagen(file_mod_time, alle_renners):
         if 'Race' not in df_raw_uitslagen.columns or 'Rider' not in df_raw_uitslagen.columns or 'Rnk' not in df_raw_uitslagen.columns:
             return pd.DataFrame()
             
+        # Vertaler voor Scorito -> Sporza afkortingen
+        scorito_naar_sporza_map = {
+            'OHN': 'OML',  # Omloop Het Nieuwsblad
+            'SB': 'STR',   # Strade Bianche
+            'BDP': 'RVB',  # Brugge-De Panne / Ronde van Brugge
+            'GW': 'IFF',   # Gent-Wevelgem / In Flanders Fields
+            'BP': 'BRP',   # Brabantse Pijl
+            'AGR': 'AGT',  # Amstel Gold Race
+            'WP': 'WAP'    # Waalse Pijl
+        }
+            
         uitslag_parsed = []
         for index, row in df_raw_uitslagen.iterrows():
-            koers = str(row['Race']).strip()
+            koers_origineel = str(row['Race']).strip().upper()
+            koers = scorito_naar_sporza_map.get(koers_origineel, koers_origineel)
+            
             rank_str = str(row['Rnk']).strip().upper()
             if rank_str in ['DNS', 'NAN', '']:
                 continue
@@ -386,7 +399,6 @@ else:
 
         st.divider()
 
-        # --- TEAM FINETUNER (SPORZA) ---
         with st.container(border=True):
             st.subheader("🛠️ Team Finetuner (Start-Team aanpassen)")
             st.markdown("Vervang renners in je team. De AI zoekt direct naar passend budget en repareert je geplande transfers en 12-starters logica.")
@@ -486,7 +498,6 @@ else:
         display_matrix = active_matrix[available_races].applymap(lambda x: ' ' if x == 0 else x)
         display_matrix.insert(0, 'Rol', matrix_df['Rol'])
         
-        # Haal uitslagen op als vinkje aan staat
         df_uitslagen = pd.DataFrame()
         if toon_uitslagen:
             u_time = get_file_mod_time("uitslagen.csv")
