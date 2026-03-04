@@ -182,8 +182,8 @@ def solve_sporza_dynamic(df, available_races, t_moments, force_base, ban_base, e
 
     # 4. Transfers Logical Constraints
     for k in range(K):
-        prob += pulp.lpSum([y[k][i] for i in df.index]) == 1 # 1 out
-        prob += pulp.lpSum([z[k][i] for i in df.index]) == 1 # 1 in
+        prob += pulp.lpSum([y[k][i] for i in df.index]) == 1 
+        prob += pulp.lpSum([z[k][i] for i in df.index]) == 1 
 
     for i in df.index:
         prob += x[i] + pulp.lpSum([z[k][i] for k in range(K)]) <= 1
@@ -221,7 +221,7 @@ def solve_sporza_dynamic(df, available_races, t_moments, force_base, ban_base, e
 
         prob += pulp.lpSum([s[r][i] for i in df.index]) <= 12
 
-    time_limit = 30 if K <= 2 else 45
+    time_limit = 20 if K <= 2 else 40
     prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=time_limit))
 
     if pulp.LpStatus[prob.status] == 'Optimal':
@@ -271,6 +271,7 @@ with st.sidebar:
             st.success("✅ Deze transfers zijn gratis in Sporza.")
 
     df = calculate_sporza_ev(df_raw, available_races, koers_mapping, ev_method)
+    df['Type'] = df.apply(bepaal_klassieker_type, axis=1)
 
     with st.expander("🔒 Renners Forceren / Uitsluiten", expanded=False):
         force_base = st.multiselect("🟢 Moet in start-team:", options=df['Renner'].tolist())
@@ -286,7 +287,7 @@ with st.sidebar:
                 st.session_state.sporza_transfer_plan = plan
                 st.rerun()
             else:
-                st.error("Geen geldige combinatie mogelijk binnen budget (120M) en ploegrestricties (Max 4).")
+                st.error("Geen geldige combinatie mogelijk binnen budget (120M) en ploegrestricties (Max 4 per ploeg).")
 
     st.divider()
     with st.expander("📂 Oude Teams Inladen", expanded=False):
@@ -311,7 +312,6 @@ if not st.session_state.sporza_selected_riders:
 else:
     all_display_riders = list(set(st.session_state.sporza_selected_riders + [t['in'] for t in st.session_state.sporza_transfer_plan]))
     current_df = df[df['Renner'].isin(all_display_riders)].copy()
-    current_df['Type'] = current_df.apply(bepaal_klassieker_type, axis=1)
     
     def bepaal_rol_en_moment(naam):
         for t in st.session_state.sporza_transfer_plan:
@@ -355,6 +355,77 @@ else:
                     with c_uit: st.error(f"❌ {t['uit']}")
                     with c_in: st.success(f"📥 {t['in']}")
                     st.write("")
+
+        st.divider()
+
+        # --- TEAM FINETUNER (SPORZA) ---
+        with st.container(border=True):
+            st.subheader("🛠️ Team Finetuner (Start-Team aanpassen)")
+            st.markdown("Vervang renners in je team. De AI zoekt direct naar passend budget en repareert je geplande transfers en 12-starters logica.")
+            
+            c_fine1, c_fine2 = st.columns(2)
+            with c_fine1: 
+                to_replace = st.multiselect("❌ Selecteer renner(s) om te verwijderen:", options=st.session_state.sporza_selected_riders)
+            
+            to_add = []
+            if to_replace:
+                # Bereken budget speling voor Sporza. Start team is maximaal 120M altijd.
+                kept_riders = [r for r in st.session_state.sporza_selected_riders if r not in to_replace]
+                cost_kept = df[df['Renner'].isin(kept_riders)]['Prijs'].sum()
+                max_affordable = 120 - cost_kept
+                
+                with c_fine2: 
+                    available_replacements = [r for r in df['Renner'].tolist() if r not in st.session_state.sporza_selected_riders]
+                    to_add_manual = st.multiselect("📥 Handmatige vervanger(s):", options=available_replacements)
+                    
+                sugg_df = df[~df['Renner'].isin(st.session_state.sporza_selected_riders)][df['Prijs'] <= max_affordable].sort_values(by='Sporza_EV', ascending=False).head(5)
+                
+                sugg_keuze = []
+                if not sugg_df.empty:
+                    st.info(f"💡 **Top AI Suggesties (Totaal overgebleven budget voor {len(to_replace)} renner(s): € {max_affordable}M):**")
+                    st.dataframe(sugg_df[['Renner', 'Prijs', 'Waarde (EV/M)', 'Sporza_EV', 'Type']], hide_index=True, use_container_width=True)
+                    sugg_keuze = st.multiselect("👉 Of selecteer hier direct een AI-suggestie:", options=sugg_df['Renner'].tolist())
+
+                to_add = list(set(to_add_manual + sugg_keuze))
+                
+                if to_add:
+                    st.markdown("**📊 Vergelijking:**")
+                    compare_riders = list(set(to_replace + to_add))
+                    compare_df = df[df['Renner'].isin(compare_riders)].copy()
+                    compare_cols = ['Renner', 'Prijs', 'Waarde (EV/M)', 'Sporza_EV'] + available_races
+                    comp_display = compare_df[compare_cols].copy()
+                    
+                    def mark_status(renner):
+                        if renner in to_replace: return '❌ Eruit'
+                        if renner in to_add: return '📥 Erin'
+                        return ''
+                        
+                    comp_display.insert(1, 'Actie', comp_display['Renner'].apply(mark_status))
+                    comp_display[available_races] = comp_display[available_races].applymap(lambda x: '✅' if x == 1 else '-')
+                    
+                    def style_compare(row):
+                        if row['Actie'] == '❌ Eruit': return ['background-color: rgba(255, 99, 71, 0.2)'] * len(row)
+                        if row['Actie'] == '📥 Erin': return ['background-color: rgba(144, 238, 144, 0.2)'] * len(row)
+                        return [''] * len(row)
+                        
+                    st.dataframe(comp_display.style.apply(style_compare, axis=1), hide_index=True, use_container_width=True)
+
+                    if st.button("🚀 VOER WIJZIGING DOOR", type="primary", use_container_width=True):
+                        new_force_base = kept_riders + to_add
+                        new_ban_base = [r for r in df['Renner'].tolist() if r not in new_force_base]
+                        
+                        if len(new_force_base) == 20:
+                            with st.spinner("AI herberekent de optimale matrix & transfers..."):
+                                new_res, new_plan = solve_sporza_dynamic(df, available_races, t_moments, new_force_base, new_ban_base, [])
+                                
+                                if new_res:
+                                    st.session_state.sporza_selected_riders = new_res
+                                    st.session_state.sporza_transfer_plan = new_plan
+                                    st.rerun()
+                                else:
+                                    st.error("Wissel geweigerd! Budget (120M) overschreden of de 4-renners-per-ploeg limiet is gebroken.")
+                        else:
+                            st.error(f"Selecteer exact {len(to_replace)} vervanger(s). Je hebt er nu {len(to_add)} gekozen.")
 
         st.divider()
         c_dl1, c_dl2 = st.columns(2)
@@ -441,7 +512,6 @@ with tab4:
     with col_f3: race_filter = st.multiselect("🏁 Rijdt geselecteerde koersen:", options=available_races)
 
     f_df = df.copy()
-    f_df['Type'] = f_df.apply(bepaal_klassieker_type, axis=1)
     if search_name: f_df = f_df[f_df['Renner'].str.contains(search_name, case=False, na=False) | f_df['Team'].str.contains(search_name, case=False, na=False)]
     f_df = f_df[(f_df['Prijs'] >= price_filter[0]) & (f_df['Prijs'] <= price_filter[1])]
     if race_filter: f_df = f_df[f_df[race_filter].sum(axis=1) == len(race_filter)]
