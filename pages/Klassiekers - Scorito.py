@@ -88,75 +88,96 @@ def evaluate_plan_ev(df_eval, base_team, plan, available_races):
             totaal += df_eval.loc[df_eval['Renner'] == r, f'EV_{race}'].values[0]
     return totaal
 
-# --- DATA LADEN ---
+# --- DATA LADEN (PROGRAMMA VAN SPORZA, PRIJS VAN SCORITO) ---
 @st.cache_data
-def load_and_merge_data(prog_mod_time, stats_mod_time):
+def load_and_merge_data(prog_mod_time, scorito_mod_time, stats_mod_time):
     try:
-        df_prog = pd.read_csv("bron_startlijsten.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
-        df_prog = df_prog.rename(columns={'RvB': 'BDP', 'IFF': 'GW'})
+        # 1. Haal programma uit Sporza bestand
+        df_prog = pd.read_csv("sporza_prijzen_startlijst.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
+        df_prog.columns = df_prog.columns.str.strip()
+        if 'Naam' in df_prog.columns and 'Renner' not in df_prog.columns:
+            df_prog = df_prog.rename(columns={'Naam': 'Renner'})
         
-        if 'Prijs' not in df_prog.columns and df_prog['Renner'].astype(str).str.contains(r'\(.*\)', regex=True).any():
-            extracted = df_prog['Renner'].str.extract(r'^(.*?)\s*\(([\d\.]+)[Mm]\)')
-            df_prog['Renner'] = extracted[0].str.strip()
-            df_prog['Prijs'] = pd.to_numeric(extracted[1], errors='coerce') * 1000000
-            
-        for col in df_prog.columns:
-            if col not in ['Renner', 'Prijs']:
-                df_prog[col] = df_prog[col].apply(lambda x: 1 if str(x).strip() in ['✓', 'v', 'V', '1', '1.0'] else 0)
-
+        # Verwijder de Sporza prijs
         if 'Prijs' in df_prog.columns:
-            df_prog['Prijs'] = df_prog['Prijs'].fillna(0)
-            df_prog.loc[df_prog['Prijs'] == 800000, 'Prijs'] = 750000
+            df_prog = df_prog.drop(columns=['Prijs'])
+            
+        # Vertaal de koersnamen van Sporza naar Scorito
+        sporza_to_scorito = {'OML': 'OHN', 'STR': 'SB', 'RVB': 'BDP', 'IFF': 'GW', 'BRP': 'BP', 'AGT': 'AGR', 'WAP': 'WP'}
+        df_prog = df_prog.rename(columns=sporza_to_scorito)
         
-        df_stats = pd.read_csv("renners_stats.csv", sep='\t', encoding='utf-8-sig') 
-        if 'Naam' in df_stats.columns:
+        # 2. Haal de Scorito prijzen uit bron_startlijsten.csv
+        df_scorito = pd.read_csv("bron_startlijsten.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
+        df_scorito.columns = df_scorito.columns.str.strip()
+        if 'Naam' in df_scorito.columns and 'Renner' not in df_scorito.columns:
+            df_scorito = df_scorito.rename(columns={'Naam': 'Renner'})
+            
+        if 'Prijs' not in df_scorito.columns and df_scorito['Renner'].astype(str).str.contains(r'\(.*\)', regex=True).any():
+            extracted = df_scorito['Renner'].str.extract(r'^(.*?)\s*\(([\d\.]+)[Mm]\)')
+            df_scorito['Renner'] = extracted[0].str.strip()
+            df_scorito['Prijs'] = pd.to_numeric(extracted[1], errors='coerce') * 1000000
+
+        if 'Prijs' in df_scorito.columns:
+            df_scorito['Prijs'] = df_scorito['Prijs'].fillna(0)
+            df_scorito.loc[df_scorito['Prijs'] == 800000, 'Prijs'] = 750000
+            
+        df_prijzen = df_scorito[['Renner', 'Prijs']].drop_duplicates(subset=['Renner'])
+
+        # 3. Haal statistieken uit renners_stats.csv
+        df_stats = pd.read_csv("renners_stats.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip') 
+        df_stats.columns = df_stats.columns.str.strip()
+        if 'Naam' in df_stats.columns and 'Renner' not in df_stats.columns:
             df_stats = df_stats.rename(columns={'Naam': 'Renner'})
         
         if 'Team' not in df_stats.columns and 'Ploeg' in df_stats.columns:
             df_stats = df_stats.rename(columns={'Ploeg': 'Team'})
-            
         df_stats = df_stats.drop_duplicates(subset=['Renner'], keep='first')
         
-        short_names = df_prog['Renner'].unique()
-        full_names = df_stats['Renner'].unique()
+        # Fuzzy Matching Setup
+        scorito_names = df_prijzen['Renner'].unique()
+        stats_names = df_stats['Renner'].unique()
         
-        norm_to_full = {normalize_name_logic(n): n for n in full_names}
-        norm_full_names = list(norm_to_full.keys())
-        name_mapping = {}
+        norm_to_scorito = {normalize_name_logic(n): n for n in scorito_names}
+        norm_scorito_list = list(norm_to_scorito.keys())
         
-        manual_overrides = {
-            "Poel": "Mathieu van der Poel", "Aert": "Wout van Aert", "Lie": "Arnaud De Lie",
-            "Gils": "Maxim Van Gils", "Broek": "Frank van den Broek",
-            "Magnier": "Paul Magnier", "Pogacar": "Tadej Pogačar", "Skujins": "Toms Skujiņš",
-            "Kooij": "Olav Kooij"
-        }
-        
-        for short in short_names:
-            if short in manual_overrides:
-                name_mapping[short] = manual_overrides[short]
-            else:
-                norm_short = normalize_name_logic(short)
-                match_res = process.extractOne(norm_short, norm_full_names, scorer=fuzz.token_set_ratio)
-                if match_res and match_res[1] > 75:
-                    name_mapping[short] = norm_to_full[match_res[0]]
-                else:
-                    name_mapping[short] = short
+        norm_to_stats = {normalize_name_logic(n): n for n in stats_names}
+        norm_stats_list = list(norm_to_stats.keys())
 
-        df_prog['Renner_Full'] = df_prog['Renner'].map(name_mapping)
-        merged_df = pd.merge(df_prog, df_stats, left_on='Renner_Full', right_on='Renner', how='left')
-        
-        if 'Renner_x' in merged_df.columns:
-            merged_df = merged_df.drop(columns=['Renner_x', 'Renner_y'], errors='ignore')
+        df_prog['Renner_Scorito'] = df_prog['Renner']
+        df_prog['Renner_Stats'] = df_prog['Renner']
+
+        for i, row in df_prog.iterrows():
+            short = row['Renner']
+            # Match met Scorito Prijs
+            best_scorito = process.extractOne(normalize_name_logic(short), norm_scorito_list, scorer=fuzz.token_set_ratio)
+            if best_scorito and best_scorito[1] > 75:
+                df_prog.at[i, 'Renner_Scorito'] = norm_to_scorito[best_scorito[0]]
             
+            # Match met Stats
+            best_stats = process.extractOne(normalize_name_logic(short), norm_stats_list, scorer=fuzz.token_set_ratio)
+            if best_stats and best_stats[1] > 75:
+                df_prog.at[i, 'Renner_Stats'] = norm_to_stats[best_stats[0]]
+                
+        # Mergen van de 3 bronnen
+        merged_df = pd.merge(df_prog, df_prijzen, left_on='Renner_Scorito', right_on='Renner', how='left', suffixes=('', '_drop1'))
+        merged_df = pd.merge(merged_df, df_stats, left_on='Renner_Stats', right_on='Renner', how='left', suffixes=('', '_drop2'))
+        
+        # Opruimen kolommen
+        drop_cols = [c for c in merged_df.columns if '_drop' in c or c in ['Renner_Scorito', 'Renner_Stats']]
+        merged_df = merged_df.drop(columns=drop_cols)
+        
+        # Alleen renners behouden die een Scorito prijs hebben (Prijs > 0)
+        merged_df['Prijs'] = pd.to_numeric(merged_df['Prijs'], errors='coerce').fillna(0).astype(int)
+        merged_df = merged_df[merged_df['Prijs'] > 0]
+        
         merged_df = merged_df.sort_values(by='Prijs', ascending=False)
-        merged_df = merged_df.drop_duplicates(subset=['Renner_Full'], keep='first')
-        merged_df = merged_df.rename(columns={'Renner_Full': 'Renner'})
+        merged_df = merged_df.drop_duplicates(subset=['Renner'], keep='first')
         
         ALLE_KOERSEN = ['OHN', 'KBK', 'SB', 'PN', 'TA', 'MSR', 'BDP', 'E3', 'GW', 'DDV', 'RVV', 'SP', 'PR', 'BP', 'AGR', 'WP', 'LBL']
         available_races = [k for k in ALLE_KOERSEN if k in merged_df.columns]
         
         all_stats_cols = ['COB', 'HLL', 'SPR', 'AVG', 'FLT', 'MTN', 'ITT', 'GC', 'OR', 'TTL']
-        for col in available_races + all_stats_cols + ['Prijs']:
+        for col in available_races + all_stats_cols:
             if col not in merged_df.columns:
                 merged_df[col] = 0
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0).astype(int)
@@ -361,9 +382,11 @@ def rebuild_team_and_transfers(df, max_bud, min_bud, max_ren, new_base_team, t_m
         return new_base_team, []
 
 # --- HOOFDCODE ---
-prog_time = get_file_mod_time("bron_startlijsten.csv")
+prog_time = get_file_mod_time("sporza_prijzen_startlijst.csv")
+scorito_time = get_file_mod_time("bron_startlijsten.csv")
 stats_time = get_file_mod_time("renners_stats.csv")
-df_raw, available_races, koers_mapping = load_and_merge_data(prog_time, stats_time)
+
+df_raw, available_races, koers_mapping = load_and_merge_data(prog_time, scorito_time, stats_time)
 
 if df_raw.empty:
     st.warning("Data is leeg of kon niet worden geladen.")
