@@ -110,15 +110,9 @@ def get_uitslagen(file_mod_time, alle_renners):
         if 'Race' not in df_raw_uitslagen.columns or 'Rider' not in df_raw_uitslagen.columns or 'Rnk' not in df_raw_uitslagen.columns:
             return pd.DataFrame()
             
-        # Vertaler voor Scorito -> Sporza afkortingen
         scorito_naar_sporza_map = {
-            'OHN': 'OML',  # Omloop Het Nieuwsblad
-            'SB': 'STR',   # Strade Bianche
-            'BDP': 'RVB',  # Brugge-De Panne / Ronde van Brugge
-            'GW': 'IFF',   # Gent-Wevelgem / In Flanders Fields
-            'BP': 'BRP',   # Brabantse Pijl
-            'AGR': 'AGT',  # Amstel Gold Race
-            'WP': 'WAP'    # Waalse Pijl
+            'OHN': 'OML', 'SB': 'STR', 'BDP': 'RVB', 
+            'GW': 'IFF', 'BP': 'BRP', 'AGR': 'AGT', 'WP': 'WAP'
         }
             
         uitslag_parsed = []
@@ -344,6 +338,7 @@ with st.sidebar:
                     st.error("Fout bij inladen.")
 
 st.title("🚴 Voorjaarsklassiekers: Sporza Wielermanager")
+st.markdown("**Met dank aan:** [Wielerorakel.nl](https://www.cyclingoracle.com/) | [Kopmanpuzzel](https://kopmanpuzzel.up.railway.app/)")
 st.divider()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Jouw Team & Transfers", "🗓️ Startlijst & Uitslagen", "👑 Kopmannen", "📋 Database", "ℹ️ Uitleg"])
@@ -475,7 +470,7 @@ else:
     with tab2:
         st.header("🗓️ Startlijst & Uitslagen")
         if toon_uitslagen:
-            st.success("✅ Actuele uitslagen ingeladen! Echte resultaten (🏅) vervangen nu de AI-voorspellingen (✅/🪑) voor verreden koersen.")
+            st.success("✅ Actuele uitslagen ingeladen! Top 20 finishes worden beloond met een medaille (🏅).")
         else:
             st.write("De AI selecteert per koers maximaal 12 renners als 'Starter' (✅). De rest zit op de 'Bank' (🪑).")
         
@@ -523,8 +518,11 @@ else:
                 if is_verreden:
                     res = df_k[df_k['Renner'] == r]
                     if not res.empty:
-                        rank = res['Rnk'].values[0]
-                        display_matrix.loc[r, c] = f"🏅 {rank}" if str(rank).isdigit() else f"🏅 {rank}"
+                        rank_str = res['Rnk'].values[0]
+                        if str(rank_str).isdigit() and int(rank_str) <= 20:
+                            display_matrix.loc[r, c] = f"🏅 {rank_str}"
+                        else:
+                            display_matrix.loc[r, c] = str(rank_str)
                     else:
                         display_matrix.loc[r, c] = "❌ DNF"
                 else:
@@ -583,23 +581,54 @@ with tab4:
     st.dataframe(d_df.sort_values(by='Sporza_EV', ascending=False), use_container_width=True, hide_index=True)
 
 with tab5:
-    st.header("ℹ️ Uitleg Sporza Wielermanager AI")
+    st.header("ℹ️ Uitgebreide Handleiding & AI Uitleg")
+
     st.markdown("""
-    Deze AI is specifiek gebouwd voor de complexe regels van de Sporza Wielermanager.
+    Deze applicatie gebruikt wiskundige optimalisatie (Integer Linear Programming) om het beruchte *Knapsack Problem* (rugzakprobleem) op te lossen. Voor de **Sporza Wielermanager** is dit extreem complex, omdat de AI niet alleen 20 renners moet kiezen, maar ook per koers moet bepalen wie er op de bank zit en of transfers de budgetboete waard zijn.
+
+    Hieronder vind je een gedetailleerde uitleg van de werking en hoe je de tool optimaal gebruikt.
+
+    ---
+
+    ### 🧠 1. Hoe berekent de AI de waarde van een renner? (Expected Value)
+    Sporza deelt punten anders uit dan andere spellen. De AI berekent de **Expected Value (EV)** per koers op basis van:
+    * **Statistieken & Profiel:** Elke koers heeft een specifiek profiel (Kassei, Heuvel, Sprint, Allround). De AI kijkt naar de bijbehorende skill van de renner.
+    * **Koers Categorieën:** Sporza maakt onderscheid in punten: *Monumenten* (max 125pt), *WorldTour* (max 100pt) en *Niet-WT* (max 80pt). De EV past zich hierop aan.
+    * **Kopman Bonus:** Bij Sporza krijgt de kopman vaste bonuspunten als hij top 6 rijdt (+30, +25, etc.), geen vermenigvuldiger (zoals x2). De AI neemt de statistische kans hierop mee in de berekening.
+    * **Rekenmodellen:** Je kunt in de zijbalk kiezen hoe agressief de AI de statistieken vertaalt naar punten (bijv. de Originele Curve).
+
+    ---
+
+    ### 🪑 2. De 12-Starters Regel (Bankzitters)
+    In Sporza mag je 20 renners in je team hebben, maar **slechts 12 mogen er daadwerkelijk starten** per koers. 
+    De AI berekent volautomatisch wie jouw 12 beste renners zijn voor bijvoorbeeld de Ronde van Vlaanderen, en zet de overige renners op de Bank (🪑). Punten van bankzitters tellen niet mee. Hierdoor 'weet' de AI dat een té brede selectie zonde van het budget is en zal hij vaker investeren in absolute piekmomenten.
+
+    ---
+
+    ### 🔁 3. Het Transfer- & Boetesysteem
+    Je kunt in de zijbalk tot wel 5 transfers vooruit plannen. De wiskundige solver weet precies wat dit kost:
+    * **Transfer 1 t/m 3:** Gratis (Totaalbudget voor je actieve team blijft 120 Miljoen)
+    * **Transfer 4:** Kost 1 Miljoen (Totaalbudget zakt naar 119 Miljoen)
+    * **Transfer 5:** Kost nog eens 2 Miljoen extra (Totaalbudget zakt naar 117 Miljoen)
     
-    **1. De 12-Starters Regel (Bankzitters)**
-    In Sporza mag je 20 renners in je team hebben, maar slechts 12 mogen er daadwerkelijk starten per koers. De AI berekent volautomatisch wie jouw 12 beste renners zijn voor bijvoorbeeld de Ronde van Vlaanderen, en zet de overige renners op de Bank (🪑). Punten van bankzitters tellen niet mee, waardoor een brede selectie zonde van het budget is.
+    De AI berekent tegelijkertijd je start-team én al je geplande wissels in de toekomst. Hij weegt af of het rendabel is om budget in te leveren voor een extra transfer, en zorgt dat je na *elke* wissel altijd een geldig team overhoudt.
 
-    **2. Ploeglimiet**
-    De solver garandeert dat je nooit meer dan 4 renners van dezelfde wielerploeg (bijv. UAE of Visma) selecteert, ongeacht het aantal transfers dat je doet.
+    ---
 
-    **3. Het Transfer & Boetesysteem**
-    Je kunt tot wel 5 transfers vooruit plannen in de zijbalk. De AI weet precies wat dit kost:
-    * Transfer 1 t/m 3: Gratis (Totaalbudget blijft 120 Miljoen)
-    * Transfer 4: Kost 1 Miljoen (Totaalbudget zakt naar 119 Miljoen)
-    * Transfer 5: Kost nog eens 2 Miljoen extra (Totaalbudget zakt naar 117 Miljoen)
-    De wiskundige berekening weegt af of het rendabel is om budget in te leveren voor een extra transfer.
+    ### 🛡️ 4. Strikte Ploeglimieten
+    De regel in Sporza luidt: **Maximaal 4 renners per wielerploeg** (bijv. max 4 van Visma of UAE). De wiskundige solver controleert dit niet alleen bij de start, maar dwingt dit ook af over je hele transfer-tijdlijn. Je kunt dus nooit per ongeluk een 5e Alpecin renner inkopen.
 
-    **4. Kopman Bonus**
-    Sporza werkt niet met een x2 of x3 vermenigvuldiger, maar met vaste bonuspunten (30, 25, 20 etc.) voor de top 6. In Tab 3 ('Kopmannen Advies') toont de AI exact welke renner uit jouw startende 12 je de hoogste statistische kans op deze bonus oplevert.
+    ---
+
+    ### 🛠️ 5. Finetuning & Handmatige Ingrepen
+    Soms wil je de algoritmes overrulen met je eigen wielerkennis:
+    * **Team Finetuner (Dashboard):** In het hoofdscherm kun je handmatig een geselecteerde renner aanklikken om te verwijderen. De AI toont direct de 5 beste alternatieven die je je nog kunt veroorloven en kijkt zelfs of de toekomstige geplande transfers en de 'max-4' regel nog wel wiskundig passen.
+    * **Renners Forceren:** Via 'Moet in start-team' (zijbalk) dwing je de AI om een renner te kopen.
+    * **Renners Uitsluiten:** Geloof je niet in de vorm van een renner? Gebruik 'Niet in start-team' of 'Compleet negeren' om de AI te dwingen een alternatief te zoeken.
+
+    ---
+
+    ### 💾 6. Back-ups & Data Exporteren (Inladen en Opslaan)
+    * **Opslaan (Back-up maken):** Onderaan Tab 1 vind je 'Exporteer Team'. Download je bestand als `.json`. Dit bevat de exacte 20 renners én je wisselmomenten.
+    * **Inladen (Team terughalen):** Ga in de linker zijbalk naar **📂 Oude Teams Inladen**. Upload je `.json` bestand. Het script controleert automatisch via *Fuzzy Matching* of oude namen nog correct in de database staan.
     """)
