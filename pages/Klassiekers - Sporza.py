@@ -338,7 +338,7 @@ with st.sidebar:
                     st.error("Fout bij inladen.")
 
 st.title("🚴 Voorjaarsklassiekers: Sporza Wielermanager")
-st.markdown("**Met dank aan:** [Wielerorakel.nl](https://www.cyclingoracle.com/) | [Kopmanpuzzel](https://kopmanpuzzel.up.railway.app/)")
+st.markdown("**Met dank aan:** [Wielerorakel.nl](https://www.cyclingoracle.com/)")
 st.divider()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Jouw Team & Transfers", "🗓️ Startlijst & Uitslagen", "👑 Kopmannen", "📋 Database", "ℹ️ Uitleg"])
