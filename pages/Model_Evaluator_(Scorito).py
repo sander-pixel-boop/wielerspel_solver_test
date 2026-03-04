@@ -15,41 +15,59 @@ Welkom bij de **Model Evaluator**. Dit dashboard test en vergelijkt live hoe ver
 1. Gestarte renners en daadwerkelijke uitslagen worden automatisch verwerkt via het koersverloop.
 2. Voor de rekenmodellen kiest het algoritme per koers de beste drie gestarte kopmannen op basis van data en statistieken.
 3. Voor de referentieselectie (*Sander's Team*) worden vooraf vastgestelde kopmannen gebruikt.
-4. Na elke race worden de individuele punten en teampunten berekend en toegevoegd aan het algemeen klassement.
-
-**Toelichting Modellen:**
-* **Rekenmodel 1:** Scorito ranking (dynamisch)
-* **Rekenmodel 2:** Originele Curve (Macht 4)
-* **Rekenmodel 3:** Extreme Curve (Macht 10)
-* **Rekenmodel 4:** Tiers & Spreiding (Realistisch)
+4. Na elke race worden de individuele punten en teampunten berekend op basis van de renners die **op dat moment** in de actieve selectie zaten.
 """)
 
-# --- HARDCODED TEAMS & KOPMANNEN ---
+ALLE_KOERSEN = ["OHN", "KBK", "SB", "PN", "TA", "MSR", "RVB", "E3", "IFF", "DDV", "RVV", "SP", "PR", "BP", "AGR", "WP", "LBL"]
+STAT_MAPPING = {"OHN": "COB", "KBK": "SPR", "SB": "HLL", "PN": "HLL/MTN", "TA": "SPR", "MSR": "AVG", "RVB": "SPR", "E3": "COB", "IFF": "SPR", "DDV": "COB", "RVV": "COB", "SP": "SPR", "PR": "COB", "BP": "HLL", "AGR": "HLL", "WP": "HLL", "LBL": "HLL"}
+
+SCORITO_PUNTEN = {
+    1: 100, 2: 90, 3: 80, 4: 70, 5: 64, 6: 60, 7: 56, 8: 52, 9: 48, 10: 44,
+    11: 40, 12: 36, 13: 32, 14: 28, 15: 24, 16: 20, 17: 16, 18: 12, 19: 8, 20: 4
+}
+TEAMPUNTEN = {1: 30, 2: 20, 3: 10}
+
+# --- HARDCODED TEAMS & TRANSFERS (Nieuwe Dynamische Structuur) ---
 HARDCODED_TEAMS = {
     "Rekenmodel 1": {
-        "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Jonathan Milan", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Stefan Küng", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Jonas Abrahamsen", "Julian Alaphilippe", "Marc Hirschi"],
-        "Early": ["Jasper Philipsen", "Mads Pedersen", "Florian Vermeersch"],
-        "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
+        "Start": ["Tadej Pogačar", "Mathieu van der Poel", "Jonathan Milan", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Stefan Küng", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Jonas Abrahamsen", "Julian Alaphilippe", "Marc Hirschi", "Jasper Philipsen", "Mads Pedersen", "Florian Vermeersch"],
+        "Transfers": [
+            {"uit": "Tim Wellens", "in": "Romain Grégoire", "moment": "KBK"},
+            {"uit": "Jonathan Milan", "in": "Remco Evenepoel", "moment": "PR"},
+            {"uit": "Tim Merlier", "in": "Tom Pidcock", "moment": "PR"}
+        ]
     },
     "Rekenmodel 2": {
-        "Basis": ["Tadej Pogačar", "Mads Pedersen", "Jonathan Milan", "Arnaud De Lie", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Mattias Skjelmose", "Florian Vermeersch", "Toms Skujiņš", "Mike Teunissen", "Marijn van den Berg", "Laurence Pithie", "Jonas Abrahamsen", "Vincenzo Albanese", "Jenno Berckmoes", "Oliver Naesen"],
-        "Early": ["Mathieu van der Poel", "Jasper Philipsen", "Jasper Stuyven"],
-        "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
+        "Start": ["Tadej Pogačar", "Mads Pedersen", "Jonathan Milan", "Arnaud De Lie", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Mattias Skjelmose", "Florian Vermeersch", "Toms Skujiņš", "Mike Teunissen", "Marijn van den Berg", "Laurence Pithie", "Jonas Abrahamsen", "Vincenzo Albanese", "Jenno Berckmoes", "Oliver Naesen", "Mathieu van der Poel", "Jasper Philipsen", "Jasper Stuyven"],
+        "Transfers": [
+            {"uit": "Tim Wellens", "in": "Romain Grégoire", "moment": "KBK"},
+            {"uit": "Arnaud De Lie", "in": "Remco Evenepoel", "moment": "PR"},
+            {"uit": "Jasper Philipsen", "in": "Tom Pidcock", "moment": "PR"}
+        ]
     },
     "Rekenmodel 3": {
-        "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Jasper Philipsen", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Mattias Skjelmose", "Florian Vermeersch", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Laurence Pithie", "Gianni Vermeersch", "Jonas Abrahamsen", "Julian Alaphilippe", "Quinten Hermans"],
-        "Early": ["Mads Pedersen", "Jonathan Milan", "Arnaud De Lie"],
-        "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
+        "Start": ["Tadej Pogačar", "Mathieu van der Poel", "Jasper Philipsen", "Tim Merlier", "Tim Wellens", "Dylan Groenewegen", "Mattias Skjelmose", "Florian Vermeersch", "Toms Skujiņš", "Mike Teunissen", "Isaac del Toro", "Jonas Vingegaard", "Laurence Pithie", "Gianni Vermeersch", "Jonas Abrahamsen", "Julian Alaphilippe", "Quinten Hermans", "Mads Pedersen", "Jonathan Milan", "Arnaud De Lie"],
+        "Transfers": [
+            {"uit": "Tim Wellens", "in": "Romain Grégoire", "moment": "KBK"},
+            {"uit": "Mathieu van der Poel", "in": "Remco Evenepoel", "moment": "PR"},
+            {"uit": "Dylan Groenewegen", "in": "Tom Pidcock", "moment": "PR"}
+        ]
     },
     "Rekenmodel 4": {
-        "Basis": ["Tadej Pogačar", "Mathieu van der Poel", "Mads Pedersen", "Jonathan Milan", "Tim Wellens", "Paul Magnier", "Dylan Groenewegen", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Jonas Vingegaard", "Giulio Ciccone", "Gianni Vermeersch", "Jonas Abrahamsen", "Marc Hirschi"],
-        "Early": ["Jasper Philipsen", "Tim Merlier", "Isaac del Toro"],
-        "Late": ["Tom Pidcock", "Remco Evenepoel", "Romain Grégoire"]
+        "Start": ["Tadej Pogačar", "Mathieu van der Poel", "Mads Pedersen", "Jonathan Milan", "Tim Wellens", "Paul Magnier", "Dylan Groenewegen", "Mattias Skjelmose", "Jasper Stuyven", "João Almeida", "Toms Skujiņš", "Mike Teunissen", "Jonas Vingegaard", "Giulio Ciccone", "Gianni Vermeersch", "Jonas Abrahamsen", "Marc Hirschi", "Jasper Philipsen", "Tim Merlier", "Isaac del Toro"],
+        "Transfers": [
+            {"uit": "Tim Wellens", "in": "Romain Grégoire", "moment": "KBK"},
+            {"uit": "Tim Merlier", "in": "Remco Evenepoel", "moment": "PR"},
+            {"uit": "Mads Pedersen", "in": "Tom Pidcock", "moment": "PR"}
+        ]
     },
     "Sander's Team": {
-        "Basis": ["Tadej Pogačar", "Jonathan Milan", "Tom Pidcock", "Christophe Laporte", "Tim Wellens", "Paul Magnier", "Romain Grégoire", "Mattias Skjelmose", "Jasper Stuyven", "Florian Vermeersch", "Milan Fretin", "Jordi Meeus", "Toms Skujiņš", "Mike Teunissen", "Jonas Vingegaard", "Gianni Vermeersch", "Jonas Abrahamsen"],
-        "Early": ["Mathieu van der Poel", "Jasper Philipsen", "Laurence Pithie"],
-        "Late": ["Remco Evenepoel", "Ben Healy", "Marc Hirschi"]
+        "Start": ["Tadej Pogačar", "Jonathan Milan", "Tom Pidcock", "Christophe Laporte", "Tim Wellens", "Paul Magnier", "Romain Grégoire", "Mattias Skjelmose", "Jasper Stuyven", "Florian Vermeersch", "Milan Fretin", "Jordi Meeus", "Toms Skujiņš", "Mike Teunissen", "Jonas Vingegaard", "Gianni Vermeersch", "Jonas Abrahamsen", "Mathieu van der Poel", "Jasper Philipsen", "Laurence Pithie"],
+        "Transfers": [
+            {"uit": "Mathieu van der Poel", "in": "Remco Evenepoel", "moment": "PR"},
+            {"uit": "Jasper Philipsen", "in": "Ben Healy", "moment": "PR"},
+            {"uit": "Laurence Pithie", "in": "Marc Hirschi", "moment": "PR"}
+        ]
     }
 }
 
@@ -59,27 +77,20 @@ MIJN_EIGEN_KOPMANNEN = {
     "KBK": {"C1": "Jonathan Milan", "C2": "Jasper Philipsen", "C3": "Jordi Meeus"},
 }
 
-ALLE_KOERSEN = ["OHN", "KBK", "SB", "PN", "TA", "MSR", "RVB", "E3", "IFF", "DDV", "RVV", "SP", "PR", "BP", "AGR", "WP", "LBL"]
-STAT_MAPPING = {"OHN": "COB", "KBK": "SPR", "SB": "HLL", "PN": "HLL/MTN", "TA": "SPR", "MSR": "AVG", "RVB": "SPR", "E3": "COB", "IFF": "SPR", "DDV": "COB", "RVV": "COB", "SP": "SPR", "PR": "COB", "BP": "HLL", "AGR": "HLL", "WP": "HLL", "LBL": "HLL"}
-LATE_SEASON_KOERSEN = ["BP", "AGR", "WP", "LBL"]
+# --- HULPFUNCTIES ---
+def get_file_mod_time(filepath):
+    return os.path.getmtime(filepath) if os.path.exists(filepath) else 0
 
-SCORITO_PUNTEN = {
-    1: 100, 2: 90, 3: 80, 4: 70, 5: 64, 6: 60, 7: 56, 8: 52, 9: 48, 10: 44,
-    11: 40, 12: 36, 13: 32, 14: 28, 15: 24, 16: 20, 17: 16, 18: 12, 19: 8, 20: 4
-}
-TEAMPUNTEN = {1: 30, 2: 20, 3: 10}
-
-# --- DATA LADEN ---
 @st.cache_data
-def load_data():
+def load_data(stats_mod_time):
     df_stats = pd.read_csv("renners_stats.csv", sep='\t')
     if 'Naam' in df_stats.columns:
         df_stats = df_stats.rename(columns={'Naam': 'Renner'})
-    
     alle_renners = sorted(df_stats['Renner'].dropna().unique())
     return df_stats, alle_renners
 
-df_stats, alle_renners = load_data()
+stats_time = get_file_mod_time("renners_stats.csv")
+df_stats, alle_renners = load_data(stats_time)
 
 st.divider()
 
@@ -135,10 +146,9 @@ else:
             details_lijst = []
 
             for koers in verreden_koersen:
-                is_late_season = koers in LATE_SEASON_KOERSEN
                 koers_stat = STAT_MAPPING.get(koers, "COB")
-                
                 df_koers_uitslag = df_uitslagen[df_uitslagen['Koers'] == koers]
+                idx_current_race = ALLE_KOERSEN.index(koers)
                 
                 winnende_ploegen = {}
                 for pos in [1, 2, 3]:
@@ -149,11 +159,23 @@ else:
                         winnende_ploegen[pos] = ploeg[0] if len(ploeg) > 0 else "Onbekend"
 
                 for model_naam, model_data in HARDCODED_TEAMS.items():
-                    actieve_selectie = model_data["Basis"] + (model_data["Late"] if is_late_season else model_data["Early"])
+                    # 1. Bepaal de actieve selectie op dít koersmoment
+                    actieve_selectie = list(model_data["Start"])
+                    for t in model_data.get("Transfers", []):
+                        moment_koers = t["moment"]
+                        if moment_koers in ALLE_KOERSEN:
+                            idx_moment = ALLE_KOERSEN.index(moment_koers)
+                            # Wissel is actief als huidige koers NA het wisselmoment valt
+                            if idx_current_race > idx_moment:
+                                if t["uit"] in actieve_selectie:
+                                    actieve_selectie.remove(t["uit"])
+                                if t["in"] not in actieve_selectie:
+                                    actieve_selectie.append(t["in"])
+                    
                     beschikbare_renners = [r for r in actieve_selectie if r in df_koers_uitslag['Renner'].values]
                     
+                    # 2. Kopmannen bepalen
                     c1, c2, c3 = None, None, None
-                    
                     if model_naam == "Sander's Team":
                         geplande_kopmannen = MIJN_EIGEN_KOPMANNEN.get(koers, {})
                         c1_intended = geplande_kopmannen.get("C1")
@@ -168,7 +190,6 @@ else:
                     team_stats = team_stats.sort_values(by=koers_stat, ascending=False).reset_index(drop=True)
                     
                     reeds_kopman = [x for x in [c1, c2, c3] if x is not None]
-                    
                     for r in team_stats['Renner'].tolist():
                         if c1 is not None and c2 is not None and c3 is not None:
                             break
@@ -185,8 +206,8 @@ else:
                             c3 = r
                             reeds_kopman.append(r)
 
+                    # 3. Punten berekenen
                     koers_score = 0
-                    
                     for renner in actieve_selectie:
                         if renner not in beschikbare_renners:
                             continue
@@ -316,17 +337,22 @@ else:
 
 # --- VOLLEDIGE SELECTIES WEERGAVE ---
 st.divider()
-st.subheader("📋 Volledige Selecties per Model (Alle 23 renners)")
+st.subheader("📋 Selecties & Transfers per Model")
 
-selectie_data = {}
-for m_name, m_data in HARDCODED_TEAMS.items():
-    basis = m_data['Basis']
-    early = [f"{r} (Voorjaar)" for r in m_data['Early']]
-    late = [f"{r} (Heuvels)" for r in m_data['Late']]
-    alle_renners_team = basis + early + late
-    selectie_data[m_name] = alle_renners_team
-
-df_selecties = pd.DataFrame(selectie_data)
-df_selecties.index = range(1, len(df_selecties) + 1)
-
-st.dataframe(df_selecties, use_container_width=True)
+cols_display = st.columns(2)
+for i, (m_name, m_data) in enumerate(HARDCODED_TEAMS.items()):
+    col = cols_display[i % 2]
+    with col:
+        with st.expander(f"Team: {m_name}"):
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                st.markdown("**Start-Team (20)**")
+                for r in m_data["Start"]:
+                    st.write(f"- {r}")
+            with c2:
+                st.markdown("**Transfers**")
+                if m_data.get("Transfers"):
+                    for t in m_data["Transfers"]:
+                        st.write(f"Wissel na **{t['moment']}**:\n❌ {t['uit']}\n📥 {t['in']}")
+                else:
+                    st.write("Geen wissels gepland.")
