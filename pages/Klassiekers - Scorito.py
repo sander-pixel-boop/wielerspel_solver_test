@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import unicodedata
 import os
+import itertools
 from thefuzz import process, fuzz
 
 # --- CONFIGURATIE ---
@@ -34,6 +35,18 @@ def get_verreden_koersen():
         except:
             pass
     return []
+
+def evaluate_plan_ev(df_eval, base_team, plan, available_races):
+    current_active = set(base_team)
+    totaal = 0
+    for race in available_races:
+        for t in plan:
+            if t['moment'] == race:
+                if t['uit'] in current_active: current_active.remove(t['uit'])
+                current_active.add(t['in'])
+        for r in current_active:
+            totaal += df_eval.loc[df_eval['Renner'] == r, f'EV_{race}'].values[0]
+    return totaal
 
 # --- DATA LADEN (CACHE GEKOPPELD AAN BESTANDSDATUM) ---
 @st.cache_data
@@ -123,7 +136,7 @@ def load_and_merge_data(prog_mod_time, stats_mod_time):
         st.error(f"Fout in dataverwerking: {e}")
         return pd.DataFrame(), [], {}
 
-def calculate_dynamic_ev(df, available_races, koers_stat_map, method, skip_races, t_moments):
+def calculate_dynamic_ev(df, available_races, koers_stat_map, method, skip_races=[]):
     df = df.copy()
     scorito_pts = [100, 90, 80, 72, 64, 58, 52, 46, 40, 36, 32, 28, 24, 20, 16, 14, 12, 10, 8, 6]
     
@@ -159,20 +172,6 @@ def calculate_dynamic_ev(df, available_races, koers_stat_map, method, skip_races
         df[f'EV_{koers}'] = race_ev
 
     df['EV_all'] = sum(race_evs.values()) if race_evs else 0.0
-    
-    # Berekent EV_y (Punten VOOR wissel) en EV_z (Punten NA wissel)
-    for k, t_race in enumerate(t_moments):
-        if t_race == 'GEEN':
-            df[f'EV_y{k}'] = df['EV_all']
-            df[f'EV_z{k}'] = 0.0
-        else:
-            split_idx = available_races.index(t_race) + 1
-            races_before = available_races[:split_idx]
-            races_after = available_races[split_idx:]
-            
-            df[f'EV_y{k}'] = sum([race_evs[r] for r in races_before]) if races_before else 0.0
-            df[f'EV_z{k}'] = sum([race_evs[r] for r in races_after]) if races_after else 0.0
-
     df['Scorito_EV'] = df['EV_all'].fillna(0).round(0).astype(int)
     df['Waarde (EV/M)'] = (df['Scorito_EV'] / (df['Prijs'] / 1000000)).replace([float('inf'), -float('inf')], 0).fillna(0).round(1)
     
@@ -196,85 +195,73 @@ def bepaal_klassieker_type(row):
         if sum(s.values()) == 0: return 'Onbekend'
         return max(s, key=s.get)
 
-# --- DE ALLES-OMVATTENDE SOLVER ---
-def solve_knapsack_dynamic(df, total_budget, min_budget, max_riders, force_base, ban_base, exclude_list, force_sells, force_buys, t_moments, use_transfers):
-    prob = pulp.LpProblem("Scorito_Dynamic_Solver", pulp.LpMaximize)
-    
+# --- HOOFD SOLVER ---
+def solve_knapsack_dynamic(df, total_budget, min_budget, max_riders, force_base, ban_base, exclude_list):
+    prob = pulp.LpProblem("Scorito_Solver", pulp.LpMaximize)
     x = pulp.LpVariable.dicts("Base", df.index, cat='Binary')
     
-    if use_transfers:
-        y_vars = [pulp.LpVariable.dicts(f"Y{k}", df.index, cat='Binary') for k in range(3)]
-        z_vars = [pulp.LpVariable.dicts(f"Z{k}", df.index, cat='Binary') for k in range(3)]
-        
-        # OBIJECTIEF: Maximaliseer Expected Value (Start team + Punten voor wissel + Punten na wissel)
-        obj = pulp.lpSum([x[i] * df.loc[i, 'EV_all'] for i in df.index])
-        for k in range(3):
-            obj += pulp.lpSum([y_vars[k][i] * df.loc[i, f'EV_y{k}'] + z_vars[k][i] * df.loc[i, f'EV_z{k}'] for i in df.index])
-        prob += obj
-        
-        # RESTRICTIES
-        for i in df.index:
-            # 1 rol per renner
-            prob += x[i] + y_vars[0][i] + y_vars[1][i] + y_vars[2][i] + z_vars[0][i] + z_vars[1][i] + z_vars[2][i] <= 1
-            
-            renner = df.loc[i, 'Renner']
-            if renner in exclude_list:
-                prob += x[i] + sum([y_vars[k][i] for k in range(3)]) + sum([z_vars[k][i] for k in range(3)]) == 0
-            if renner in force_base:
-                prob += x[i] + sum([y_vars[k][i] for k in range(3)]) == 1
-            if renner in ban_base:
-                prob += x[i] + sum([y_vars[k][i] for k in range(3)]) == 0
-            if renner in force_sells:
-                prob += sum([y_vars[k][i] for k in range(3)]) == 1
-            if renner in force_buys:
-                prob += sum([z_vars[k][i] for k in range(3)]) == 1
+    prob += pulp.lpSum([df.loc[i, 'EV_all'] * x[i] for i in df.index])
+    prob += pulp.lpSum([x[i] for i in df.index]) == max_riders
+    prob += pulp.lpSum([df.loc[i, 'Prijs'] * x[i] for i in df.index]) <= total_budget
+    prob += pulp.lpSum([df.loc[i, 'Prijs'] * x[i] for i in df.index]) >= min_budget
+    
+    for i in df.index:
+        renner = df.loc[i, 'Renner']
+        if renner in force_base: prob += x[i] == 1
+        if renner in ban_base: prob += x[i] == 0
+        if renner in exclude_list: prob += x[i] == 0
 
-        for k in range(3):
-            prob += pulp.lpSum([y_vars[k][i] for i in df.index]) <= 1  
-            prob += pulp.lpSum([y_vars[k][i] for i in df.index]) == pulp.lpSum([z_vars[k][i] for i in df.index]) 
-            
-        prob += pulp.lpSum([x[i] for i in df.index]) + pulp.lpSum([y_vars[0][i] for i in df.index]) + pulp.lpSum([y_vars[1][i] for i in df.index]) + pulp.lpSum([y_vars[2][i] for i in df.index]) == max_riders
-        
-        # Budget Check na ELKE wissel (Voorkomt te duur inkopen)
-        prob += pulp.lpSum([(x[i] + y_vars[0][i] + y_vars[1][i] + y_vars[2][i]) * df.loc[i, 'Prijs'] for i in df.index]) <= total_budget
-        prob += pulp.lpSum([(x[i] + y_vars[0][i] + y_vars[1][i] + y_vars[2][i]) * df.loc[i, 'Prijs'] for i in df.index]) >= min_budget
-        
-        prob += pulp.lpSum([(x[i] + z_vars[0][i] + y_vars[1][i] + y_vars[2][i]) * df.loc[i, 'Prijs'] for i in df.index]) <= total_budget
-        prob += pulp.lpSum([(x[i] + z_vars[0][i] + z_vars[1][i] + y_vars[2][i]) * df.loc[i, 'Prijs'] for i in df.index]) <= total_budget
-        prob += pulp.lpSum([(x[i] + z_vars[0][i] + z_vars[1][i] + z_vars[2][i]) * df.loc[i, 'Prijs'] for i in df.index]) <= total_budget
+    prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=15))
+    if pulp.LpStatus[prob.status] == 'Optimal':
+        return [df.loc[i, 'Renner'] for i in df.index if x[i].varValue > 0.5]
+    return []
 
-        prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=30))
-        
-        if pulp.LpStatus[prob.status] == 'Optimal':
-            base_team = [df.loc[i, 'Renner'] for i in df.index if x[i].varValue > 0.5]
-            transfer_plan = []
+# --- NOODWISSEL SOLVER ---
+def find_emergency_replacements(df_eval, base_team, transfer_plan, injured_riders, last_race, max_budget, available_races):
+    all_historical_riders = set(base_team + [t['in'] for t in transfer_plan])
+    candidates = df_eval[~df_eval['Renner'].isin(all_historical_riders)].copy()
+    
+    idx = available_races.index(last_race)
+    remaining_races = available_races[idx+1:]
+    candidates['EV_remaining'] = candidates[[f'EV_{r}' for r in remaining_races]].sum(axis=1)
+    
+    prob = pulp.LpProblem("Noodwissel", pulp.LpMaximize)
+    vars = pulp.LpVariable.dicts("C", candidates.index, cat='Binary')
+    
+    prob += pulp.lpSum([candidates.loc[i, 'EV_remaining'] * vars[i] for i in candidates.index])
+    prob += pulp.lpSum([vars[i] for i in candidates.index]) == len(injured_riders)
+    
+    current_team = set(base_team)
+    for race in available_races[:idx+1]:
+        for t in transfer_plan:
+            if t['moment'] == race:
+                if t['uit'] in current_team: current_team.remove(t['uit'])
+                current_team.add(t['in'])
+                
+    for inj in injured_riders:
+        if inj in current_team:
+            current_team.remove(inj)
             
-            for k in range(3):
-                uit = [df.loc[i, 'Renner'] for i in df.index if y_vars[k][i].varValue > 0.5]
-                erin = [df.loc[i, 'Renner'] for i in df.index if z_vars[k][i].varValue > 0.5]
-                if uit and erin:
-                    transfer_plan.append({"uit": uit[0], "in": erin[0], "moment": t_moments[k]})
-                    base_team.append(uit[0])
+    base_cost_now = df_eval[df_eval['Renner'].isin(current_team)]['Prijs'].sum()
+    prob += base_cost_now + pulp.lpSum([candidates.loc[i, 'Prijs'] * vars[i] for i in candidates.index]) <= max_budget
+    
+    temp_team = set(current_team)
+    for race in available_races[idx+1:]:
+        changed = False
+        for t in transfer_plan:
+            if t['moment'] == race:
+                if t['uit'] in temp_team: temp_team.remove(t['uit'])
+                temp_team.add(t['in'])
+                changed = True
+        if changed:
+            cost_future = df_eval[df_eval['Renner'].isin(temp_team)]['Prijs'].sum()
+            prob += cost_future + pulp.lpSum([candidates.loc[i, 'Prijs'] * vars[i] for i in candidates.index]) <= max_budget
             
-            return base_team, transfer_plan
-            
-    else:
-        prob += pulp.lpSum([df.loc[i, 'EV_all'] * x[i] for i in df.index])
-        prob += pulp.lpSum([x[i] for i in df.index]) == max_riders
-        prob += pulp.lpSum([df.loc[i, 'Prijs'] * x[i] for i in df.index]) <= total_budget
-        prob += pulp.lpSum([df.loc[i, 'Prijs'] * x[i] for i in df.index]) >= min_budget
-        
-        for i in df.index:
-            renner = df.loc[i, 'Renner']
-            if renner in force_base: prob += x[i] == 1
-            if renner in ban_base: prob += x[i] == 0
-            if renner in exclude_list: prob += x[i] == 0
-
-        prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=15))
-        if pulp.LpStatus[prob.status] == 'Optimal':
-            return [df.loc[i, 'Renner'] for i in df.index if x[i].varValue > 0.5], []
-            
-    return None, None
+    prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=10))
+    
+    if pulp.LpStatus[prob.status] == 'Optimal':
+        return [candidates.loc[i, 'Renner'] for i in candidates.index if vars[i].varValue > 0.5]
+    return []
 
 # --- HOOFDCODE ---
 prog_time = get_file_mod_time("bron_startlijsten.csv")
@@ -288,6 +275,11 @@ if df_raw.empty:
 if "selected_riders" not in st.session_state: st.session_state.selected_riders = []
 if "transfer_plan" not in st.session_state: st.session_state.transfer_plan = []
 
+current_active_riders = list(st.session_state.selected_riders)
+for t in st.session_state.transfer_plan:
+    if t['uit'] in current_active_riders: current_active_riders.remove(t['uit'])
+    if t['in'] not in current_active_riders: current_active_riders.append(t['in'])
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.title("🏆 AI Coach")
@@ -298,77 +290,107 @@ with st.sidebar:
     
     if actieve_koersen:
         st.success(f"✅ Gereden koersen gedetecteerd (t/m {actieve_koersen[-1]})")
-        if st.checkbox("🔮 Toon alleen Resterende EV", value=True, help="Negeer behaalde punten zodat de AI perfect de toekomst voorspelt."):
+        if st.checkbox("🔮 Toon alleen Resterende EV", value=True, help="Negeer behaalde punten."):
             skip_races = actieve_koersen
 
     ev_method = st.selectbox("🧮 Rekenmodel (EV)", ["1. Scorito Ranking (Dynamisch)", "2. Originele Curve (Macht 4)", "3. Extreme Curve (Macht 10)", "4. Tiers & Spreiding (Realistisch)"])
-    use_transfers = st.checkbox("🔁 Bereken met wissel-strategie", value=True)
-    
-    t_moments = ["GEEN", "GEEN", "GEEN"]
-    if use_transfers:
-        st.markdown("**🗓️ Wanneer wil je wisselen? (Kies max 3 momenten)**")
-        default_index = available_races.index('PR') if 'PR' in available_races else len(available_races) - 2
-        t1 = st.selectbox("Wissel 1 na:", options=available_races[:-1], index=default_index)
-        t2 = st.selectbox("Wissel 2 na:", options=available_races[:-1], index=default_index)
-        t3 = st.selectbox("Wissel 3 na:", options=available_races[:-1], index=default_index)
-        t_moments = sorted([t1, t2, t3], key=lambda x: available_races.index(x))
     
     with st.expander("⚙️ Budget & Limieten", expanded=False):
         max_ren = st.number_input("Totaal aantal renners", value=20)
         max_bud = st.number_input("Max Budget", value=45000000, step=500000)
         min_bud = st.number_input("Min Budget", value=43000000, step=500000)
         
-    df = calculate_dynamic_ev(df_raw, available_races, koers_mapping, ev_method, skip_races, t_moments)
+    df = calculate_dynamic_ev(df_raw, available_races, koers_mapping, ev_method, skip_races)
 
-    # --- NIEUWE NOODWISSEL METHODE ---
-    st.divider()
-    game_locked = st.checkbox("🔒 Spel is begonnen (Start-team vastzetten)", value=False, help="Bevries je huidige 20 renners om uitsluitend de wisselmomenten te optimaliseren.")
-    
-    force_base = []
-    ban_base = []
-    ziekenboeg = []
-    force_sells = []
-    force_buys = []
-    
-    if game_locked:
-        if len(st.session_state.selected_riders) == max_ren:
-            current_20 = st.session_state.selected_riders
-            force_base = current_20
-            ban_base = [r for r in df['Renner'].tolist() if r not in current_20]
+    with st.expander("🚑 Directe Noodwissel (Blessure)", expanded=False):
+        st.info("Valt een renner uit? Vind direct de beste wissel op dít moment en blijf netjes binnen de 3-wissels limiet.")
+        
+        if len(st.session_state.selected_riders) > 0:
+            default_lr_idx = available_races.index(actieve_koersen[-1]) if actieve_koersen else 0
+            last_race = st.selectbox("Laatst gereden koers (Moment van wissel):", options=available_races[:-1], index=default_lr_idx)
             
-            st.info("💡 **Tip bij blessures:** Pas hierboven 'Wissel 1 na' aan naar de koers waar je renner geblesseerd raakte (bijv. KBK). Selecteer hem hieronder. De AI herberekent nu *al* je wissels tegelijkertijd binnen je budget!")
+            active_at_moment = list(st.session_state.selected_riders)
+            idx_last = available_races.index(last_race)
+            for t in st.session_state.transfer_plan:
+                if available_races.index(t['moment']) <= idx_last:
+                    if t['uit'] in active_at_moment: active_at_moment.remove(t['uit'])
+                    if t['in'] not in active_at_moment: active_at_moment.append(t['in'])
+                    
+            injured_selection = st.multiselect("Geblesseerde renner(s) eruit:", options=active_at_moment)
             
-            ziekenboeg = st.multiselect("🤕 Ziekenboeg (Zet EV op 0):", options=current_20, help="Geef gevallen renners door. De AI zal deze hoogstwaarschijnlijk verkopen als je een wisselmoment hebt toegewezen.")
-            force_sells = st.multiselect("❌ Forceer specifieke verkoop:", options=[r for r in current_20 if r not in ziekenboeg])
-            force_buys = st.multiselect("📥 Forceer specifieke aankoop:", options=[r for r in df['Renner'].tolist() if r not in current_20])
-            
-            for z in ziekenboeg:
-                df.loc[df['Renner'] == z, [c for c in df.columns if 'EV' in c]] = 0
-                df.loc[df['Renner'] == z, 'Scorito_EV'] = 0
+            if injured_selection:
+                planned_transfers_copy = list(st.session_state.transfer_plan)
+                
+                auto_drop = []
+                for i, t in enumerate(planned_transfers_copy):
+                    if t['uit'] in injured_selection and available_races.index(t['moment']) >= idx_last:
+                        auto_drop.append(i)
+                        
+                for idx in sorted(auto_drop, reverse=True):
+                    st.write(f"💡 *Geplande verkoop van {planned_transfers_copy[idx]['uit']} vervalt automatisch ter compensatie.*")
+                    planned_transfers_copy.pop(idx)
+                    
+                drops_needed = (len(planned_transfers_copy) + len(injured_selection)) - 3
+                
+                ai_auto_drop = False
+                drop_choices = []
+                if drops_needed > 0:
+                    st.warning(f"🚨 Je overschrijdt de limiet (max 3). Er moeten {drops_needed} geplande wissel(s) vervallen.")
+                    ai_auto_drop = st.checkbox("🤖 Laat de AI de minst pijnlijke wissel(s) opofferen", value=True)
+                    if not ai_auto_drop:
+                        opts = {i: f"{t['uit']} -> {t['in']} (na {t['moment']})" for i, t in enumerate(planned_transfers_copy)}
+                        drop_choices = st.multiselect("Selecteer handmatig welke wissel(s) moeten vervallen:", options=list(opts.keys()), format_func=lambda x: opts[x], max_selections=drops_needed)
+                    
+                if st.button("Vind & Voer Wissel Uit", type="primary", use_container_width=True):
+                    if drops_needed > 0 and not ai_auto_drop and len(drop_choices) != drops_needed:
+                        st.error(f"Selecteer exact {drops_needed} wissel(s) om te annuleren.")
+                    else:
+                        if drops_needed > 0 and ai_auto_drop:
+                            best_ev = -1
+                            best_plan = None
+                            
+                            for drop_indices in itertools.combinations(range(len(planned_transfers_copy)), drops_needed):
+                                temp_plan = [t for i, t in enumerate(planned_transfers_copy) if i not in drop_indices]
+                                repls = find_emergency_replacements(df, st.session_state.selected_riders, temp_plan, injured_selection, last_race, max_bud, available_races)
+                                
+                                if repls:
+                                    temp_full_plan = temp_plan + [{"uit": u, "in": r, "moment": last_race} for u, r in zip(injured_selection, repls)]
+                                    ev = evaluate_plan_ev(df, st.session_state.selected_riders, temp_full_plan, available_races)
+                                    if ev > best_ev:
+                                        best_ev = ev
+                                        best_plan = temp_full_plan
+                                        
+                            if best_plan:
+                                st.session_state.transfer_plan = best_plan
+                                st.rerun()
+                            else:
+                                st.error("Geen budgettaire oplossing gevonden met deze opofferingen.")
+                        else:
+                            temp_plan = [t for i, t in enumerate(planned_transfers_copy) if i not in drop_choices]
+                            replacements = find_emergency_replacements(df, st.session_state.selected_riders, temp_plan, injured_selection, last_race, max_bud, available_races)
+                            if replacements:
+                                temp_full_plan = temp_plan + [{"uit": u, "in": r, "moment": last_race} for u, r in zip(injured_selection, replacements)]
+                                st.session_state.transfer_plan = temp_full_plan
+                                st.rerun()
+                            else:
+                                st.error("Niet genoeg budget voor een geldige vervanger!")
         else:
-            st.warning("Bereken of laad eerst je complete start-team in om het vast te zetten.")
-    else:
-        with st.expander("🔒 Handmatige Restricties (Voor het spel)", expanded=False):
-            force_base = st.multiselect("🟢 Moet in start-team:", options=df['Renner'].tolist())
-            ban_base = st.multiselect("🔴 Niet in start-team (mag evt wel gekocht worden):", options=[r for r in df['Renner'].tolist() if r not in force_base])
-    
-    # Exclude is altijd beschikbaar
-    exclude_list = st.multiselect("🚫 Negeer compleet (verdwijnt uit de berekening):", options=[r for r in df['Renner'].tolist() if r not in force_base])
+            st.warning("Je moet eerst een start-team berekenen of inladen.")
+
+    with st.expander("🔒 Renners Forceren / Uitsluiten", expanded=False):
+        force_base = st.multiselect("🟢 Moet in start-team:", options=df['Renner'].tolist())
+        ban_base = st.multiselect("🔴 Niet in start-team:", options=[r for r in df['Renner'].tolist() if r not in force_base])
+        exclude_list = st.multiselect("🚫 Compleet negeren (hele jaar):", options=[r for r in df['Renner'].tolist() if r not in force_base + ban_base])
 
     st.write("")
-    if st.button("🚀 BEREKEN OPTIMAAL TEAM & WISSELS", type="primary", use_container_width=True):
-        if game_locked and len(st.session_state.selected_riders) != max_ren:
-            st.error("Je kunt je team niet updaten: Start-team ontbreekt of is niet compleet.")
+    if st.button("🚀 BEREKEN NIEUW START-TEAM", type="secondary", use_container_width=True):
+        res = solve_knapsack_dynamic(df, max_bud, min_bud, max_ren, force_base, ban_base, exclude_list)
+        if res:
+            st.session_state.selected_riders = res
+            st.session_state.transfer_plan = [] 
+            st.rerun()
         else:
-            res, transfer_plan = solve_knapsack_dynamic(
-                df, max_bud, min_bud, max_ren, force_base, ban_base, exclude_list, force_sells + ziekenboeg, force_buys, t_moments, use_transfers
-            )
-            if res:
-                st.session_state.selected_riders = res
-                st.session_state.transfer_plan = transfer_plan
-                st.rerun()
-            else:
-                st.error("Geen oplossing mogelijk. Het budget is waarschijnlijk overschreden door je restricties of je vaste kern.")
+            st.error("Geen oplossing mogelijk met deze eisen.")
 
     st.divider()
     with st.expander("📂 Oude Teams Inladen", expanded=False):
@@ -406,7 +428,7 @@ st.markdown("**Met dank aan:** [Wielerorakel.nl](https://www.cyclingoracle.com/)
 st.divider()
 
 if not st.session_state.selected_riders:
-    st.info("👈 Kies je instellingen in de zijbalk en klik op **Bereken Optimaal Team** of laad een eerdere backup in!")
+    st.info("👈 Kies je instellingen in de zijbalk en klik op **Bereken Nieuw Start-Team** of **Oude Teams Inladen** om te beginnen!")
     st.stop()
 
 # --- ANALYSE VERWERKEN ---
@@ -448,14 +470,10 @@ with tab1:
     start_cost = start_team_df['Prijs'].sum()
     
     m1, m2, m3 = st.columns(3)
-    m1.metric("💰 Start Budget (Overig)", f"€ {max_bud - start_cost:,.0f}")
+    m1.metric("💰 Budget over (Start)", f"€ {max_bud - start_cost:,.0f}")
     m2.metric("🚴 Renners (Start)", f"{len(st.session_state.selected_riders)} / {max_ren}")
     
-    totaal_ev = 0
-    for r in active_matrix.index:
-        for c in available_races:
-            if active_matrix.loc[r, c] == 1:
-                totaal_ev += current_df.loc[current_df['Renner'] == r, f'EV_{c}'].values[0]
+    totaal_ev = evaluate_plan_ev(df, st.session_state.selected_riders, st.session_state.transfer_plan, available_races)
                 
     m3.metric("🎯 Team EV (Totaal)", f"{totaal_ev:.0f}")
     st.divider()
@@ -466,19 +484,24 @@ with tab1:
         st.dataframe(start_team_df[['Renner', 'Prijs', 'Type', 'Rol']].sort_values(by='Prijs', ascending=False), hide_index=True, use_container_width=True)
     
     with col_t2:
-        st.markdown(f"**🔁 Het Meesterplan ({len(st.session_state.transfer_plan)}/3)**")
+        c_tr_head, c_tr_btn = st.columns([3,1])
+        with c_tr_head: st.markdown(f"**🔁 Transfer Plan ({len(st.session_state.transfer_plan)}/3)**")
+        with c_tr_btn:
+            if st.session_state.transfer_plan:
+                if st.button("🗑️ Annuleer laatste", use_container_width=True):
+                    st.session_state.transfer_plan.pop()
+                    st.rerun()
 
         if not st.session_state.transfer_plan:
-            st.info("Je hebt geen wissels gepland (of 0 wissels levert momenteel de meeste punten op).")
+            st.info("Nog geen transfers doorgevoerd. Gebruik 'Directe Noodwissel' in de zijbalk.")
         else:
             temp_team = list(st.session_state.selected_riders)
-            
-            for i, t in enumerate(sorted(st.session_state.transfer_plan, key=lambda x: available_races.index(x['moment']))):
+            for i, t in enumerate(st.session_state.transfer_plan):
                 if t['uit'] in temp_team: temp_team.remove(t['uit'])
                 if t['in'] not in temp_team: temp_team.append(t['in'])
                 budget_now = max_bud - df[df['Renner'].isin(temp_team)]['Prijs'].sum()
                 
-                st.markdown(f"***Wissel {i+1} (ná {t['moment']} | Speling: €{budget_now/1000000:.2f}M)***")
+                st.markdown(f"***Wissel {i+1} (ná {t['moment']} | Resterend budget: €{budget_now/1000000:.2f}M)***")
                 c_uit, c_in = st.columns(2)
                 with c_uit: st.error(f"❌ {t['uit']}")
                 with c_in: st.success(f"📥 {t['in']}")
@@ -491,7 +514,7 @@ with tab1:
         save_data = {"selected_riders": st.session_state.selected_riders, "transfer_plan": st.session_state.transfer_plan}
         st.download_button("📥 Download als .JSON (Backup)", data=json.dumps(save_data), file_name="scorito_team.json", mime="application/json", use_container_width=True)
     with c_dl2:
-        export_df = current_df[['Renner', 'Rol', 'Prijs', 'Team', 'Type', 'Scorito_EV']].copy()
+        export_df = current_df[['Renner', 'Rol', 'Prijs', 'Team', 'Type', 'Waarde (EV/M)', 'Scorito_EV']].copy()
         st.download_button("📊 Download als .CSV (Excel)", data=export_df.to_csv(index=False).encode('utf-8'), file_name="scorito_team.csv", mime="text/csv", use_container_width=True)
 
 with tab2:
@@ -553,13 +576,54 @@ with tab4:
     st.dataframe(d_df.sort_values(by='Scorito_EV', ascending=False), use_container_width=True, hide_index=True)
 
 with tab5:
-    st.header("ℹ️ Uitleg Noodwissels")
-    st.markdown("""
-    ### Hoe voer je tijdens het spel een wissel door?
-    1. Vink **🔒 Spel is begonnen** aan in de zijbalk. De AI bevriest nu je originele 20 renners.
-    2. Zet de momenten bij **'Wanneer wil je wisselen'** goed. Heb je een blessure na Kuurne (KBK)? Zet dan Wissel 1 op 'KBK'. Laat Wissel 2 en 3 staan op Parijs-Roubaix (PR).
-    3. Zet de geblesseerde renner in de **Ziekenboeg**.
-    4. Klik op Bereken! 
+    st.header("ℹ️ Uitgebreide Handleiding & AI Uitleg")
     
-    De wiskundige motor berekent nu *in één keer* al je 3 wissels opnieuw. Hij zal de geblesseerde renner na KBK dumpen voor een topper die vroeg in het voorjaar rijdt (bijv. Grégoire), en bewaart perfect je budget om na Roubaix nog een late held (bijv. Evenepoel) te kopen!
+    st.markdown("""
+    Deze applicatie gebruikt wiskundige optimalisatie (Integer Linear Programming) om het beruchte *Knapsack Problem* (rugzakprobleem) op te lossen. Het doel is simpel: bouw een team met de hoogst mogelijke verwachte punten, zonder de budget- en spellimieten te overschrijden.
+
+    Hieronder vind je een gedetailleerde uitleg van de werking en hoe je de tool optimaal gebruikt.
+
+    ---
+
+    ### 🧠 1. Hoe berekent de AI de waarde van een renner? (Expected Value)
+    Scorito draait om punten scoren. De AI voorspelt deze punten via de **Expected Value (EV)**. De EV van een renner wordt per koers opgebouwd uit:
+    * **Statistieken & Profiel:** Elke koers heeft een specifiek profiel (Kassei, Heuvel, Sprint, Allround). De AI kijkt naar de bijbehorende skill van de renner (bijv. de `COB`-statistiek voor Roubaix).
+    * **Kopman Multipliers:** In Scorito halen kopmannen de meeste punten (3x, 2.5x, 2x). De AI bepaalt per koers volautomatisch wie je 3 beste renners zijn en past deze multipliers toe op hun verwachte punten.
+    * **Rekenmodellen:** Je kunt in de zijbalk kiezen hoe agressief de AI de statistieken vertaalt naar punten:
+        1. *Scorito Ranking:* Kijkt puur of een renner in de top-20 van een koers kan eindigen en deelt de vaste Scorito-punten uit.
+        2. *Originele Curve (Macht 4):* Geeft een exponentiële bonus aan absolute topspecialisten ten opzichte van subtoppers.
+        3. *Extreme Curve (Macht 10):* Dwingt de AI om uitsluitend absolute wereldtoppers te selecteren en gokt minder op breedte.
+        4. *Tiers:* Verdeelt renners in vaste categorieën (Kopman, outsider, knecht).
+
+    ---
+
+    ### 🔁 2. De Dynamische Wisselstrategie
+    In Scorito mag je maximaal 3 renners wisselen. Waar veel spelers standaard na Parijs-Roubaix wisselen, laat deze AI je de **tijdlijn** volledig zelf bepalen.
+
+    * **De Tijdvakken:** Zodra je wisselmomenten instelt (bijv. na KBK en na PR), snapt de AI dat het seizoen is opgedeeld in blokken. 
+    * **Sluitende Begroting:** De wiskundige solver garandeert dat je op *geen enkel moment* over de €45 miljoen gaat. De som van je startteam mag max €45M zijn, maar ook de som van je team ná wissel 1, én na wissel 2.
+
+    ---
+
+    ### 🚑 3. Noodwissels (Tijdens het spel)
+    Zit je midden in het voorjaar en valt een belangrijke pion weg door een valpartij of ziekte? 
+    
+    1. Vink in de zijbalk **🔒 Spel is begonnen** aan. Je kunt hier een renner selecteren en direct een wissel moment instellen.
+    2. De AI kijkt nu naar het resterende budget, haalt de geblesseerde renner eruit, en selecteert de renner die in de *resterende* koersen het best presteert.
+    3. *Let op:* Had je al 3 wissels gepland staan verderop in het seizoen? Dan zal de AI één van die toekomstige wissels automatisch of op jouw verzoek opofferen om onder de limiet van 3 transfers te blijven.
+
+    ---
+
+    ### 🛠️ 4. Finetuning & Handmatige Ingrepen
+    Soms wil je de algoritmes overrulen met je eigen wielerkennis:
+    * **Renners Forceren:** Via 'Moet in start-team' dwing je de AI om een renner te kopen, ongeacht zijn prijs/kwaliteit-verhouding.
+    * **Renners Uitsluiten:** Geloof je niet in de vorm van een renner? Gebruik 'Niet in start-team' of 'Compleet negeren' om de AI te dwingen een alternatief te zoeken.
+
+    ---
+
+    ### 💾 5. Back-ups & Data Exporteren (Inladen en Opslaan)
+    Je wilt je berekende selectie niet kwijtraken. Daarom bevat dit dashboard een export- en importfunctie:
+    * **Opslaan als JSON:** Onderaan het dashboard ('Exporteer Team') kun je jouw team downloaden als een `.json` bestand. Dit is je harde back-up.
+    * **Inladen van JSON:** In de zijbalk vind je '📂 Oude Teams Inladen'. Upload hier je `.json` bestand om je eerdere 20 basisrenners en geplande wissels direct terug in het model te laden. Het script controleert zelfs automatisch of je renners nog steeds in de actuele database staan.
+    * **Opslaan als CSV:** Wil je je team liever in Excel bekijken of delen? Download hem dan als `.csv`. Let op: deze is puur visueel en kan niet via de zijbalk worden ingeladen.
     """)
