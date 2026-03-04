@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import pulp
+import json
 import unicodedata
 import os
 from thefuzz import process, fuzz
@@ -20,32 +21,22 @@ def normalize_name_logic(text):
 @st.cache_data
 def load_and_merge_data():
     try:
-        # Automatische separator detectie en spaties strippen voor SPORZA bestand
         df_prog = pd.read_csv("sporza_prijzen_startlijst.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
         df_prog.columns = df_prog.columns.str.strip()
-        
         if 'Naam' in df_prog.columns and 'Renner' not in df_prog.columns:
             df_prog = df_prog.rename(columns={'Naam': 'Renner'})
         
-        if 'Prijs' not in df_prog.columns or 'Team' not in df_prog.columns:
-            st.error(f"Het bestand 'sporza_prijzen_startlijst.csv' mist 'Prijs' of 'Team' kolommen. Gevonden kolommen: {list(df_prog.columns)}")
-            return pd.DataFrame(), [], {}
-
-        # Inlezen statistieken
         df_stats = pd.read_csv("renners_stats.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip') 
         df_stats.columns = df_stats.columns.str.strip()
         if 'Naam' in df_stats.columns and 'Renner' not in df_stats.columns:
             df_stats = df_stats.rename(columns={'Naam': 'Renner'})
-            
         df_stats = df_stats.drop_duplicates(subset=['Renner'], keep='first')
         
-        # 🚨 FIX: Voorkom dubbele 'Team' en 'Prijs' kolommen bij het mergen
         overlap_cols = [c for c in df_stats.columns if c in df_prog.columns and c != 'Renner']
         df_stats = df_stats.drop(columns=overlap_cols)
         
         short_names = df_prog['Renner'].unique()
         full_names = df_stats['Renner'].unique()
-        
         norm_to_full = {normalize_name_logic(n): n for n in full_names}
         norm_full_names = list(norm_to_full.keys())
         name_mapping = {}
@@ -74,14 +65,11 @@ def load_and_merge_data():
         if 'Renner_x' in merged_df.columns:
             merged_df = merged_df.drop(columns=['Renner_x', 'Renner_y'], errors='ignore')
             
-        # Zorg dat de prijs correct doorkomt als nummer
         merged_df['Prijs'] = pd.to_numeric(merged_df['Prijs'], errors='coerce').fillna(0).astype(int)
-            
         merged_df = merged_df.sort_values(by='Prijs', ascending=False)
         merged_df = merged_df.drop_duplicates(subset=['Renner_Full'], keep='first')
         merged_df = merged_df.rename(columns={'Renner_Full': 'Renner'})
         
-        # Sporza Specifieke Koersen
         ALLE_KOERSEN = ["OML", "KBK", "SAM", "STR", "NOK", "BKC", "MSR", "RVB", "E3", "IFF", "DDV", "RVV", "SP", "PR", "RVL", "BRP", "AGT", "WAP", "LBL"]
         available_races = [k for k in ALLE_KOERSEN if k in merged_df.columns]
         
@@ -108,11 +96,8 @@ def load_and_merge_data():
         st.error(f"Fout in dataverwerking: {e}")
         return pd.DataFrame(), [], {}
 
-# --- EV BEREKENING (SPORZA PUNTEN) ---
 def calculate_sporza_ev(df, available_races, koers_stat_map, method):
     df = df.copy()
-    
-    # Sporza Puntenverdeling
     pts_monument = [125, 100, 80, 70, 60, 50, 45, 40, 37, 34, 31, 28, 25, 22, 20, 18, 16, 14, 12, 10]
     pts_wt = [100, 80, 65, 55, 48, 40, 36, 32, 30, 27, 24, 22, 20, 18, 16, 14, 12, 10, 9, 8]
     pts_non_wt = [80, 64, 52, 44, 38, 32, 29, 26, 24, 22, 20, 18, 16, 14, 12, 11, 10, 9, 8, 7]
@@ -131,7 +116,6 @@ def calculate_sporza_ev(df, available_races, koers_stat_map, method):
         else: scorito_pts = pts_non_wt
         
         race_ev = pd.Series(0.0, index=df.index)
-        
         for i, idx in enumerate(starters.index):
             val = 0.0
             if "Sporza Ranking" in method:
@@ -139,11 +123,9 @@ def calculate_sporza_ev(df, available_races, koers_stat_map, method):
             elif "Originele Curve" in method:
                 val = (starters.loc[idx, stat] / 100)**4 * scorito_pts[0]
                 
-            # LET OP: Kopman bonus in Sporza is een absoluut getal (30, 25, 20), geen multiplier!
             if i == 0: val += 30
             elif i == 1: val += 25
             elif i == 2: val += 20
-            
             race_ev.loc[idx] = val
         
         race_evs[koers] = race_ev
@@ -151,58 +133,86 @@ def calculate_sporza_ev(df, available_races, koers_stat_map, method):
 
     df['EV_all'] = sum(race_evs.values()) if race_evs else 0.0
     df['Sporza_EV'] = df['EV_all'].fillna(0).round(0).astype(int)
-    # Waarde is nu punten per Miljoen (Sporza prijzen zijn typisch 2 t/m 14)
     df['Waarde (EV/M)'] = (df['Sporza_EV'] / df['Prijs']).replace([float('inf'), -float('inf')], 0).fillna(0).round(1)
     
     return df
 
-# --- SPORZA SOLVER (Inclusief 12-Starters regel) ---
-def solve_sporza_base(df, available_races):
-    prob = pulp.LpProblem("Sporza_Solver", pulp.LpMaximize)
-    
-    # x: Is de renner in het team van 20?
-    x = pulp.LpVariable.dicts("Base", df.index, cat='Binary')
-    
-    # s: Is de renner OPGESTELD (starter) in een specifieke koers?
-    s = {}
-    for koers in available_races:
-        s[koers] = pulp.LpVariable.dicts(f"Start_{koers}", df.index, cat='Binary')
-    
-    # OBJECTIEF: Maximaliseer de EV van renners die *daadwerkelijk opgesteld* (s) staan
-    obj = 0
-    for koers in available_races:
-        obj += pulp.lpSum([s[koers][i] * df.loc[i, f'EV_{koers}'] for i in df.index])
-    prob += obj
-    
-    # RESTRICTIE 1: Teamgrootte = 20
-    prob += pulp.lpSum([x[i] for i in df.index]) == 20
-    
-    # RESTRICTIE 2: Budget = Maximaal 120 Miljoen
-    prob += pulp.lpSum([df.loc[i, 'Prijs'] * x[i] for i in df.index]) <= 120
-    
-    # RESTRICTIE 3: Maximaal 4 renners per Team
-    teams = df['Team'].unique()
-    for team in teams:
-        team_indices = df[df['Team'] == team].index
-        prob += pulp.lpSum([x[i] for i in team_indices]) <= 4
-        
-    # RESTRICTIE 4: Starters Logica per Koers
-    for koers in available_races:
-        for i in df.index:
-            # Kan alleen starten als hij in je base team van 20 zit
-            prob += s[koers][i] <= x[i]
-            # Kan alleen starten als hij de koers ook echt op zijn programma heeft staan
-            prob += s[koers][i] <= df.loc[i, koers]
-            
-        # Je mag maximaal 12 renners opstellen per koers
-        prob += pulp.lpSum([s[koers][i] for i in df.index]) <= 12
+# --- SPORZA SOLVER (DYNAMISCHE TRANSFERS + 12-STARTERS) ---
+def solve_sporza_dynamic(df, available_races, t_moments):
+    prob = pulp.LpProblem("Sporza_Solver_Dynamic", pulp.LpMaximize)
+    K = len(t_moments)
 
-    # Oplossen - geef het iets meer tijd omdat 12-starters per koers zwaar rekenwerk is
-    prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=45))
-    
+    x = pulp.LpVariable.dicts("Base", df.index, cat='Binary')
+    y = [pulp.LpVariable.dicts(f"Uit_{k}", df.index, cat='Binary') for k in range(K)]
+    z = [pulp.LpVariable.dicts(f"In_{k}", df.index, cat='Binary') for k in range(K)]
+    s = {r: pulp.LpVariable.dicts(f"Start_{r}", df.index, cat='Binary') for r in available_races}
+
+    # 1. Objective
+    prob += pulp.lpSum([s[r][i] * df.loc[i, f'EV_{r}'] for r in available_races for i in df.index])
+
+    # 2. Base Team = 20
+    prob += pulp.lpSum([x[i] for i in df.index]) == 20
+
+    # 3. Transfers Logical Constraints
+    for k in range(K):
+        prob += pulp.lpSum([y[k][i] for i in df.index]) == 1 # 1 out
+        prob += pulp.lpSum([z[k][i] for i in df.index]) == 1 # 1 in
+
+    for i in df.index:
+        # Een renner kan of in de basis zitten, of later gekocht worden. (Nooit beide)
+        prob += x[i] + pulp.lpSum([z[k][i] for k in range(K)]) <= 1
+
+    for k in range(K):
+        for i in df.index:
+            # Een renner kan alleen verkocht worden als hij op dat moment in het team zit
+            active_before = x[i] - pulp.lpSum([y[m][i] for m in range(k)]) + pulp.lpSum([z[m][i] for m in range(k)])
+            prob += y[k][i] <= active_before
+
+    # Sporza Boete Systeem: 1, 2, 3 gratis. 4e kost 1M. 5e kost 2M (totaal 3M eraf). 6e kost 3M (totaal 6 eraf).
+    penalties = [0, 0, 0, 0, 1, 3, 6, 10, 15]
+    teams = df['Team'].unique()
+
+    # 4. Period Constraints (Budget & Team Limiet)
+    for p in range(K + 1):
+        budget_limit = 120 - penalties[p]
+        
+        # Budget Check
+        prob += pulp.lpSum([(x[j] - pulp.lpSum([y[m][j] for m in range(p)]) + pulp.lpSum([z[m][j] for m in range(p)])) * df.loc[j, 'Prijs'] for j in df.index]) <= budget_limit
+        
+        # Team Limiet Check (Max 4 per ploeg op elk moment)
+        for team in teams:
+            team_indices = df[df['Team'] == team].index
+            prob += pulp.lpSum([(x[j] - pulp.lpSum([y[m][j] for m in range(p)]) + pulp.lpSum([z[m][j] for m in range(p)])) for j in team_indices]) <= 4
+
+    # 5. Starters Logic
+    for r in available_races:
+        idx_r = available_races.index(r)
+        active_transfers = []
+        for k, m in enumerate(t_moments):
+            if available_races.index(m) < idx_r:
+                active_transfers.append(k)
+
+        for i in df.index:
+            active_at_r = x[i] - pulp.lpSum([y[k][i] for k in active_transfers]) + pulp.lpSum([z[k][i] for k in active_transfers])
+            prob += s[r][i] <= active_at_r
+            prob += s[r][i] <= df.loc[i, r]
+
+        prob += pulp.lpSum([s[r][i] for i in df.index]) <= 12
+
+    # Solve! Geef iets meer tijd als er veel transfers zijn
+    time_limit = 30 if K <= 2 else 45
+    prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=time_limit))
+
     if pulp.LpStatus[prob.status] == 'Optimal':
-        return [df.loc[i, 'Renner'] for i in df.index if x[i].varValue > 0.5]
-    return []
+        base_team = [df.loc[i, 'Renner'] for i in df.index if x[i].varValue > 0.5]
+        transfer_plan = []
+        for k in range(K):
+            uit = [df.loc[i, 'Renner'] for i in df.index if y[k][i].varValue > 0.5]
+            erin = [df.loc[i, 'Renner'] for i in df.index if z[k][i].varValue > 0.5]
+            if uit and erin:
+                transfer_plan.append({"uit": uit[0], "in": erin[0], "moment": t_moments[k]})
+        return base_team, transfer_plan
+    return [], []
 
 # --- HOOFDCODE ---
 df_raw, available_races, koers_mapping = load_and_merge_data()
@@ -211,58 +221,176 @@ if df_raw.empty:
     st.warning("Data is leeg of kon niet worden geladen. Controleer of 'sporza_prijzen_startlijst.csv' bestaat en correct is geformatteerd.")
     st.stop()
 
-if "selected_riders" not in st.session_state: st.session_state.selected_riders = []
+if "sporza_selected_riders" not in st.session_state: st.session_state.sporza_selected_riders = []
+if "sporza_transfer_plan" not in st.session_state: st.session_state.sporza_transfer_plan = []
 
 with st.sidebar:
     st.title("🚴 Sporza AI Coach")
     ev_method = st.selectbox("🧮 Rekenmodel (EV)", ["1. Sporza Ranking (Dynamisch)", "2. Originele Curve (Macht 4)"])
     
+    st.divider()
+    st.markdown("### 🔁 Transfer Strategie")
+    num_transfers = st.slider("Aantal geplande transfers", 0, 5, 0)
+    
+    t_moments = []
+    if num_transfers > 0:
+        st.write("Wanneer wil je de wissels inzetten?")
+        for i in range(num_transfers):
+            default_idx = min(len(available_races)-2, 13) # PR is meestal rond index 13
+            moment = st.selectbox(f"Wissel {i+1} ná:", options=available_races[:-1], index=default_idx, key=f"t_{i}")
+            t_moments.append(moment)
+            
+        t_moments = sorted(t_moments, key=lambda x: available_races.index(x))
+        
+        # Laat budget consequentie zien
+        penalties = [0, 0, 0, 0, 1, 3, 6, 10, 15]
+        penalty = penalties[num_transfers]
+        if penalty > 0:
+            st.error(f"⚠️ Let op: {num_transfers} transfers kost je € {penalty}M totaalbudget na je laatste wissel!")
+        else:
+            st.success("✅ Deze transfers zijn gratis in Sporza.")
+
     df = calculate_sporza_ev(df_raw, available_races, koers_mapping, ev_method)
 
     st.write("")
-    if st.button("🚀 BEREKEN START-TEAM (Basis-20)", type="primary", use_container_width=True):
-        res = solve_sporza_base(df, available_races)
-        if res:
-            st.session_state.selected_riders = res
-            st.rerun()
-        else:
-            st.error("Geen geldige combinatie mogelijk binnen budget (120M) en ploegrestricties (Max 4).")
+    if st.button("🚀 BEREKEN SPORZA TEAM", type="primary", use_container_width=True):
+        with st.spinner("Wiskundige berekening loopt... Dit kan bij meerdere transfers ca. 20-40 sec duren."):
+            res, plan = solve_sporza_dynamic(df, available_races, t_moments)
+            if res:
+                st.session_state.sporza_selected_riders = res
+                st.session_state.sporza_transfer_plan = plan
+                st.rerun()
+            else:
+                st.error("Geen geldige combinatie mogelijk binnen budget en ploegrestricties (Max 4).")
+
+    st.divider()
+    with st.expander("📂 Oude Teams Inladen", expanded=False):
+        uploaded_file = st.file_uploader("Upload een JSON backup:", type="json")
+        if uploaded_file is not None:
+            if st.button("Laad Backup in", use_container_width=True):
+                try:
+                    ld = json.load(uploaded_file)
+                    st.session_state.sporza_selected_riders = ld.get("selected_riders", [])
+                    st.session_state.sporza_transfer_plan = ld.get("transfer_plan", [])
+                    st.rerun()
+                except Exception as e:
+                    st.error("Fout bij inladen.")
 
 st.title("🚴 Voorjaarsklassiekers: Sporza Wielermanager")
 st.divider()
 
-if not st.session_state.selected_riders:
-    st.info("👈 Klik op **Bereken Start-Team** in de zijbalk om de AI aan het werk te zetten!")
+if not st.session_state.sporza_selected_riders:
+    st.info("👈 Kies je transfer-strategie in de zijbalk en klik op **Bereken Sporza Team** om te beginnen!")
 else:
-    current_df = df[df['Renner'].isin(st.session_state.selected_riders)].copy()
+    all_display_riders = list(set(st.session_state.sporza_selected_riders + [t['in'] for t in st.session_state.sporza_transfer_plan]))
+    current_df = df[df['Renner'].isin(all_display_riders)].copy()
+    
+    def bepaal_rol_en_moment(naam):
+        for t in st.session_state.sporza_transfer_plan:
+            if naam == t['uit']: return f"Verkocht na {t['moment']}"
+            if naam == t['in']: return f"Gekocht na {t['moment']}"
+        return 'Basis (Blijft)'
+
+    current_df['Rol'] = current_df['Renner'].apply(bepaal_rol_en_moment)
+    
+    start_team_df = current_df[current_df['Renner'].isin(st.session_state.sporza_selected_riders)]
     
     st.subheader("📊 Jouw Sporza Selectie")
     m1, m2, m3 = st.columns(3)
-    m1.metric("💰 Budget over", f"€ {120 - current_df['Prijs'].sum()}M")
-    m2.metric("🚴 Renners", f"{len(current_df)} / 20")
-    m3.metric("🎯 Team EV (Potentieel)", f"{current_df['Sporza_EV'].sum()}")
+    m1.metric("💰 Start Budget (Overig)", f"€ {120 - start_team_df['Prijs'].sum()}M")
+    m2.metric("🚴 Renners (Start)", f"{len(start_team_df)} / 20")
+    m3.metric("🎯 Start EV (Totaal)", f"{start_team_df['Sporza_EV'].sum()}")
     
-    st.dataframe(current_df[['Renner', 'Prijs', 'Team', 'Sporza_EV', 'Waarde (EV/M)']].sort_values(by='Prijs', ascending=False), hide_index=True, use_container_width=True)
+    col_t1, col_t2 = st.columns([1, 1], gap="large")
+    with col_t1:
+        st.markdown("**🛡️ Jouw Start-Team**")
+        st.dataframe(start_team_df[['Renner', 'Prijs', 'Team', 'Rol']].sort_values(by='Prijs', ascending=False), hide_index=True, use_container_width=True)
     
+    with col_t2:
+        st.markdown(f"**🔁 Het Transfer Plan ({len(st.session_state.sporza_transfer_plan)} gepland)**")
+        if not st.session_state.sporza_transfer_plan:
+            st.info("Geen transfers ingepland.")
+        else:
+            temp_team = list(st.session_state.sporza_selected_riders)
+            penalties = [0, 0, 0, 0, 1, 3, 6, 10, 15]
+            for i, t in enumerate(st.session_state.sporza_transfer_plan):
+                if t['uit'] in temp_team: temp_team.remove(t['uit'])
+                if t['in'] not in temp_team: temp_team.append(t['in'])
+                
+                budget_limiet = 120 - penalties[i+1]
+                budget_now = budget_limiet - df[df['Renner'].isin(temp_team)]['Prijs'].sum()
+                
+                kosten_text = "Gratis" if i < 3 else f"-€{penalties[i+1]-penalties[i]}M Boete"
+                
+                st.markdown(f"***Wissel {i+1} (ná {t['moment']} | Speling: €{budget_now}M | {kosten_text})***")
+                c_uit, c_in = st.columns(2)
+                with c_uit: st.error(f"❌ {t['uit']}")
+                with c_in: st.success(f"📥 {t['in']}")
+                st.write("")
+
     st.divider()
     st.subheader("🗓️ Startlijst (Met de 12-Starters regel)")
-    st.write("De AI berekent per koers wie de 12 beste 'Starters' zijn en wie er op de 'Bank' (🪑) moeten plaatsnemen.")
+    st.write("De AI selecteert per koers je actieve team en wijst maximaal 12 renners aan als 'Starter' (✅). De rest zit op de 'Bank' (🪑).")
     
-    display_matrix = current_df[['Renner', 'Prijs'] + available_races].set_index('Renner')
-    display_matrix[available_races] = display_matrix[available_races].applymap(lambda x: '✅' if x == 1 else '-')
+    matrix_df = current_df[['Renner', 'Prijs', 'Rol'] + available_races].set_index('Renner')
+    active_matrix = matrix_df.copy()
+
+    # Bepaal wie er in het team zit op welk moment
+    for r in current_df['Renner']:
+        rol = current_df.loc[current_df['Renner'] == r, 'Rol'].values[0]
+        if 'Verkocht na' in rol:
+            moment = rol.replace('Verkocht na ', '')
+            if moment in available_races:
+                idx = available_races.index(moment) + 1
+                active_matrix.loc[r, available_races[idx:]] = 0
+                for c in available_races[idx:]: active_matrix.loc[r, c] = 0
+        elif 'Gekocht na' in rol:
+            moment = rol.replace('Gekocht na ', '')
+            if moment in available_races:
+                idx = available_races.index(moment) + 1
+                active_matrix.loc[r, available_races[:idx]] = 0
+                for c in available_races[:idx]: active_matrix.loc[r, c] = 0
+
+    display_matrix = active_matrix[available_races].applymap(lambda x: ' ' if x == 0 else x)
+    display_matrix.insert(0, 'Rol', matrix_df['Rol'])
     
+    # Bereken 12 starters vs bank
     totals_dict = {}
     for c in available_races:
-        # Selecteer de top 12 renners o.b.v. verwachte punten (EV) voor die specifieke race
-        starters = current_df[current_df[c] == 1].sort_values(by=f'EV_{c}', ascending=False).head(12)
-        totals_dict[c] = str(len(starters))
+        # Wie rijdt deze koers (heeft een 1 in de database) EN zit op dat moment in het team
+        active_riders_in_race = []
+        for r in active_matrix.index:
+            if active_matrix.loc[r, c] == 1:
+                active_riders_in_race.append(r)
+                
+        # Top 12 pakken o.b.v. EV
+        starters_df = current_df[current_df['Renner'].isin(active_riders_in_race)].sort_values(by=f'EV_{c}', ascending=False).head(12)
+        starters_names = starters_df['Renner'].values
+        totals_dict[c] = str(len(starters_names))
         
-        # Markeer de renners die wel meedoen, maar buiten de top 12 vallen als bankzitters
-        for idx in current_df[current_df[c] == 1].index:
-            renner = current_df.loc[idx, 'Renner']
-            if renner not in starters['Renner'].values:
-                display_matrix.loc[renner, c] = '🪑'
+        # Vul de symbolen in
+        for r in active_riders_in_race:
+            if r in starters_names:
+                display_matrix.loc[r, c] = '✅'
+            else:
+                display_matrix.loc[r, c] = '🪑'
 
-    totals_df = pd.DataFrame([totals_dict], index=['🚀 STARTERS (Max 12)'])
+    # Wissel kolommen toevoegen in de matrix
+    for t in st.session_state.sporza_transfer_plan:
+        moment = t['moment']
+        if moment in display_matrix.columns and f'🔁 {moment}' not in display_matrix.columns:
+            idx = display_matrix.columns.get_loc(moment) + 1
+            display_matrix.insert(idx, f'🔁 {moment}', '|')
+
+    def color_rows(row):
+        if 'Verkocht' in row['Rol']: return ['background-color: rgba(255, 99, 71, 0.2)'] * len(row)
+        if 'Gekocht' in row['Rol']: return ['background-color: rgba(144, 238, 144, 0.2)'] * len(row)
+        return [''] * len(row)
+
+    totals_df = pd.DataFrame([totals_dict], index=['🚀 AANTAL STARTERS (Max 12)'])
     st.dataframe(totals_df, use_container_width=True)
-    st.dataframe(display_matrix, use_container_width=True)
+    st.dataframe(display_matrix.style.apply(color_rows, axis=1), use_container_width=True)
+    
+    st.divider()
+    save_data = {"selected_riders": st.session_state.sporza_selected_riders, "transfer_plan": st.session_state.sporza_transfer_plan}
+    st.download_button("📥 Download Team als .JSON (Backup)", data=json.dumps(save_data), file_name="sporza_team.json", mime="application/json")
