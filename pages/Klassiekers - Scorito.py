@@ -31,10 +31,50 @@ def get_verreden_koersen():
             if 'Race' not in df_u.columns:
                 df_u = pd.read_csv("uitslagen.csv", sep=None, engine='python')
             if 'Race' in df_u.columns:
-                return [str(x).strip().upper() for x in df_u['Race'].unique()]
+                # Vertaal Sporza afkortingen naar Scorito voor de sidebar check
+                sporza_naar_scorito_map = {'OML': 'OHN', 'STR': 'SB', 'RVB': 'BDP', 'IFF': 'GW', 'BRP': 'BP', 'AGT': 'AGR', 'WAP': 'WP'}
+                races = [str(x).strip().upper() for x in df_u['Race'].unique()]
+                return [sporza_naar_scorito_map.get(r, r) for r in races]
         except:
             pass
     return []
+
+@st.cache_data
+def get_uitslagen(file_mod_time, alle_renners):
+    if not os.path.exists("uitslagen.csv"):
+        return pd.DataFrame()
+    try:
+        df_raw_uitslagen = pd.read_csv("uitslagen.csv", sep=None, engine='python')
+        df_raw_uitslagen.columns = [str(c).strip().title() for c in df_raw_uitslagen.columns]
+        
+        if 'Race' not in df_raw_uitslagen.columns or 'Rider' not in df_raw_uitslagen.columns or 'Rnk' not in df_raw_uitslagen.columns:
+            return pd.DataFrame()
+            
+        sporza_naar_scorito_map = {
+            'OML': 'OHN', 'STR': 'SB', 'RVB': 'BDP', 
+            'IFF': 'GW', 'BRP': 'BP', 'AGT': 'AGR', 'WAP': 'WP'
+        }
+            
+        uitslag_parsed = []
+        for index, row in df_raw_uitslagen.iterrows():
+            koers_origineel = str(row['Race']).strip().upper()
+            koers = sporza_naar_scorito_map.get(koers_origineel, koers_origineel)
+            
+            rank_str = str(row['Rnk']).strip().upper()
+            if rank_str in ['DNS', 'NAN', '']:
+                continue
+            
+            rider_name = str(row['Rider']).strip()
+            match = process.extractOne(rider_name, alle_renners, scorer=fuzz.token_set_ratio)
+            if match and match[1] > 70:
+                uitslag_parsed.append({
+                    "Race": koers,
+                    "Rnk": rank_str,
+                    "Renner": match[0]
+                })
+        return pd.DataFrame(uitslag_parsed)
+    except:
+        return pd.DataFrame()
 
 def evaluate_plan_ev(df_eval, base_team, plan, available_races):
     current_active = set(base_team)
@@ -48,7 +88,7 @@ def evaluate_plan_ev(df_eval, base_team, plan, available_races):
             totaal += df_eval.loc[df_eval['Renner'] == r, f'EV_{race}'].values[0]
     return totaal
 
-# --- DATA LADEN (CACHE GEKOPPELD AAN BESTANDSDATUM) ---
+# --- DATA LADEN ---
 @st.cache_data
 def load_and_merge_data(prog_mod_time, stats_mod_time):
     try:
@@ -274,7 +314,6 @@ def rebuild_team_and_transfers(df, max_bud, min_bud, max_ren, new_base_team, t_m
         
         obj = pulp.lpSum([x[i] * df.loc[i, 'EV_all'] for i in df.index])
         for k in range(3):
-            # Bereken EV voor en na wisselmoment
             split_idx = available_races.index(t_moments[k]) + 1 if t_moments[k] != 'GEEN' else len(available_races)
             races_before = available_races[:split_idx]
             races_after = available_races[split_idx:]
@@ -288,9 +327,7 @@ def rebuild_team_and_transfers(df, max_bud, min_bud, max_ren, new_base_team, t_m
         
         for i in df.index:
             prob += x[i] + y_vars[0][i] + y_vars[1][i] + y_vars[2][i] + z_vars[0][i] + z_vars[1][i] + z_vars[2][i] <= 1
-            
             renner = df.loc[i, 'Renner']
-            # Forceer het volledige handmatige startteam
             if renner in new_base_team:
                 prob += x[i] + sum([y_vars[k][i] for k in range(3)]) == 1
             else:
@@ -345,8 +382,11 @@ with st.sidebar:
     
     if actieve_koersen:
         st.success(f"✅ Gereden koersen gedetecteerd (t/m {actieve_koersen[-1]})")
+        toon_uitslagen = st.checkbox("🏁 Koersen zijn begonnen (Toon uitslagen in Matrix)", value=True)
         if st.checkbox("🔮 Toon alleen Resterende EV", value=True, help="Negeer behaalde punten."):
             skip_races = actieve_koersen
+    else:
+        toon_uitslagen = False
 
     ev_method = st.selectbox("🧮 Rekenmodel (EV)", ["1. Scorito Ranking (Dynamisch)", "2. Originele Curve (Macht 4)", "3. Extreme Curve (Macht 10)", "4. Tiers & Spreiding (Realistisch)"])
     use_transfers = st.checkbox("🔁 Bereken met wissel-strategie", value=True)
@@ -453,7 +493,6 @@ with st.sidebar:
         if res:
             st.session_state.selected_riders = res
             st.session_state.transfer_plan = [] 
-            # Bereken daarna meteen de beste transfers in
             new_res, new_plan = rebuild_team_and_transfers(df, max_bud, min_bud, max_ren, res, t_moments, use_transfers)
             if new_res:
                 st.session_state.selected_riders = new_res
@@ -498,9 +537,8 @@ st.markdown("**Met dank aan:** [Wielerorakel.nl](https://www.cyclingoracle.com/)
 st.divider()
 
 # --- TAB STRUCTUUR OPZETTEN ---
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Jouw Team & Transfers", "🗓️ Startlijst Matrix", "📊 Kopmannen", "📋 Database (Alle)", "ℹ️ Uitleg"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Jouw Team & Transfers", "🗓️ Startlijst & Uitslagen", "📊 Kopmannen", "📋 Database (Alle)", "ℹ️ Uitleg"])
 
-# --- TABS 1, 2, 3: AFHANKELIJK VAN GESELECTEERD TEAM ---
 if not st.session_state.selected_riders:
     with tab1:
         st.info("👈 Kies je instellingen in de zijbalk en klik op **Bereken Nieuw Start-Team** of **Oude Teams Inladen** om te beginnen!")
@@ -583,7 +621,6 @@ else:
 
         st.divider()
         
-        # --- TEAM FINETUNER (TERUGGEPLAATST) ---
         with st.container(border=True):
             st.subheader("🛠️ Team Finetuner (Start-Team aanpassen)")
             st.markdown("Vervang vóór de start van het spel een renner in je team. De AI past je toekomstige transfers volautomatisch aan als dat nodig is om binnen budget te blijven.")
@@ -635,7 +672,6 @@ else:
                     st.dataframe(comp_display.style.apply(style_compare, axis=1), hide_index=True, use_container_width=True)
 
                     if st.button("🚀 VOER WIJZIGING DOOR", type="primary", use_container_width=True):
-                        # Gebruik de rebuild_team functie zodat de AI de 20 vastzet, en de transfers opnieuw berekent
                         new_force_base = [r for r in st.session_state.selected_riders if r not in to_replace] + to_add
                         
                         if len(new_force_base) == max_ren:
@@ -661,9 +697,31 @@ else:
             st.download_button("📊 Download als .CSV (Excel)", data=export_df.to_csv(index=False).encode('utf-8'), file_name="scorito_team.csv", mime="text/csv", use_container_width=True)
 
     with tab2:
-        st.header("🗓️ Matrix & Deelnames")
+        st.header("🗓️ Startlijst & Uitslagen")
         
         display_matrix = active_matrix[available_races].applymap(lambda x: '✅' if x == 1 else '-')
+        
+        if toon_uitslagen:
+            st.success("✅ Actuele uitslagen ingeladen! Top 20 finishes worden beloond met een medaille (🏅).")
+            u_time = get_file_mod_time("uitslagen.csv")
+            df_uitslagen = get_uitslagen(u_time, df['Renner'].tolist())
+            verreden_koersen = df_uitslagen['Race'].unique() if not df_uitslagen.empty else []
+            
+            for c in available_races:
+                if c in verreden_koersen:
+                    df_k = df_uitslagen[df_uitslagen['Race'] == c]
+                    for r in display_matrix.index:
+                        if display_matrix.loc[r, c] == '✅':
+                            res = df_k[df_k['Renner'] == r]
+                            if not res.empty:
+                                rank_str = res['Rnk'].values[0]
+                                if str(rank_str).isdigit() and int(rank_str) <= 20:
+                                    display_matrix.loc[r, c] = f"🏅 {rank_str}"
+                                else:
+                                    display_matrix.loc[r, c] = str(rank_str)
+                            else:
+                                display_matrix.loc[r, c] = "❌ DNF"
+
         display_matrix.insert(0, 'Rol', matrix_df['Rol'])
         display_matrix.insert(1, 'Type', matrix_df['Type'])
         
@@ -699,7 +757,6 @@ else:
                 })
         st.dataframe(pd.DataFrame(kop_res), hide_index=True, use_container_width=True)
 
-# --- TAB 4 & 5: ALTIJD BESCHIKBAAR ONAFHANKELIJK VAN GESELECTEERD TEAM ---
 with tab4:
     st.header("📋 Database: Alle Renners")
     col_f1, col_f2, col_f3 = st.columns(3)
