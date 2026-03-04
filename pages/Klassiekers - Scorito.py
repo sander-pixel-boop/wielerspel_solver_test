@@ -20,7 +20,10 @@ def normalize_name_logic(text):
     nfkd_form = unicodedata.normalize('NFKD', text)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
-# --- HULPFUNCTIE: UITSLAGEN LEZEN ---
+# --- HULPFUNCTIES: BESTANDSCONTROLE & UITSLAGEN ---
+def get_file_mod_time(filepath):
+    return os.path.getmtime(filepath) if os.path.exists(filepath) else 0
+
 def get_verreden_koersen():
     if os.path.exists("uitslagen.csv"):
         try:
@@ -33,7 +36,6 @@ def get_verreden_koersen():
             pass
     return []
 
-# --- HULPFUNCTIE: EV EVALUATOR ---
 def evaluate_plan_ev(df_eval, base_team, plan, available_races):
     current_active = set(base_team)
     totaal = 0
@@ -46,9 +48,9 @@ def evaluate_plan_ev(df_eval, base_team, plan, available_races):
             totaal += df_eval.loc[df_eval['Renner'] == r, f'EV_{race}'].values[0]
     return totaal
 
-# --- DATA LADEN ---
+# --- DATA LADEN (CACHE GEKOPPELD AAN BESTANDSDATUM) ---
 @st.cache_data
-def load_and_merge_data():
+def load_and_merge_data(prog_mod_time, stats_mod_time):
     try:
         df_prog = pd.read_csv("bron_startlijsten.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
         df_prog = df_prog.rename(columns={'RvB': 'BDP', 'IFF': 'GW'})
@@ -262,7 +264,11 @@ def find_emergency_replacements(df_eval, base_team, transfer_plan, injured_rider
     return []
 
 # --- HOOFDCODE ---
-df_raw, available_races, koers_mapping = load_and_merge_data()
+# Cache invalidatie via bestandsmodificatiedata
+prog_time = get_file_mod_time("bron_startlijsten.csv")
+stats_time = get_file_mod_time("renners_stats.csv")
+df_raw, available_races, koers_mapping = load_and_merge_data(prog_time, stats_time)
+
 if df_raw.empty:
     st.warning("Data is leeg of kon niet worden geladen.")
     st.stop()
