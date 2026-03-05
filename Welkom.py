@@ -1,13 +1,42 @@
 import streamlit as st
 
-# 1. Definieer de inhoud van de homepagina in een functie
-def home_page():
-    st.set_page_config(
-        page_title="Wieler Spellen Solver",
-        page_icon="🚴‍♂️",
-    )
+# 1. Paginaconfiguratie (MOET als eerste)
+st.set_page_config(page_title="Wieler Spellen Solver", page_icon="🚴‍♂️")
 
-    st.write("# Welkom bij de Wieler Spellen Solver! 🚴‍♂️")
+# 2. Inlog Systeem
+def check_password():
+    def password_entered():
+        user = st.session_state["username_input"].strip()
+        pwd = st.session_state["password_input"].strip()
+        
+        # Controleer of de gebruiker bestaat en het wachtwoord klopt via de Streamlit Secrets
+        if user in st.secrets.get("passwords", {}) and pwd == str(st.secrets["passwords"][user]):
+            st.session_state["password_correct"] = True
+            st.session_state["ingelogde_speler"] = user
+            del st.session_state["password_input"]  # Wis wachtwoord uit geheugen voor veiligheid
+        else:
+            st.session_state["password_correct"] = False
+
+    if st.session_state.get("password_correct", False):
+        return True
+
+    st.write("# 🔒 Log in om verder te gaan")
+    st.text_input("Gebruikersnaam", key="username_input")
+    st.text_input("Wachtwoord", type="password", key="password_input")
+    st.button("Inloggen", on_click=password_entered, type="primary")
+
+    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+        st.error("❌ Gebruikersnaam of wachtwoord onjuist.")
+    return False
+
+# Stop het script als de speler niet is ingelogd
+if not check_password():
+    st.stop()
+
+# 3. De Homepagina (Alleen zichtbaar na inloggen)
+def home_page():
+    speler = st.session_state["ingelogde_speler"].capitalize()
+    st.write(f"# Welkom bij de Wieler Spellen Solver, {speler}! 🚴‍♂️")
 
     st.markdown(
         """
@@ -36,13 +65,13 @@ def home_page():
         ---
         
         ### 🙏 Credits & Databronnen
-        Deze applicatie is gebouwd op de schouders van de fantastische wielercommunity. Veel dank aan:
+        Deze applicatie is gebouwd op de schouders van de fantastische wielercommunity. Veel dank aan (bronvermelding):
         * **[Wielerorakel.nl](https://www.cyclingoracle.com/):** Voor het leveren van de Stats van de renners.
         * **[Kopmanpuzzel](https://kopmanpuzzel.up.railway.app/):** Voor het uitstekende voorwerk rondom de startlijsten en de actuele Scorito-prijzen.
         """
     )
 
-# 2. Definieer alle pagina's met de exacte, eenduidige bestandsnamen en titels
+# 4. Pagina Navigatie
 home = st.Page(home_page, title="Home", icon="🏠", default=True)
 
 cf_pagina = st.Page("pages/Cycling_Fantasy.py", title="CF Dashboard", icon="🚴")
@@ -57,7 +86,6 @@ sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="[Binnenkort] Eval
 
 eigen_spel = st.Page("pages/Het_Spel.py", title="Custom Klassiekers Spel", icon="🎮")
 
-# 3. Groepeer de navigatie voor de sidebar
 pg = st.navigation({
     "Info": [home],
     "Cycling Fantasy": [cf_pagina],
@@ -66,5 +94,4 @@ pg = st.navigation({
     "Eigen Competitie": [eigen_spel]
 })
 
-# 4. Voer de applicatie uit
 pg.run()
