@@ -2,11 +2,31 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import hashlib
+from datetime import datetime
 from thefuzz import process, fuzz
+from supabase import create_client, Client
 
 st.set_page_config(page_title="Custom Klassiekers Spel", layout="wide", page_icon="🎮")
 
-# --- HULPFUNCTIES ---
+# --- CHECK INLOG & DATABASE SETUP ---
+if "ingelogde_speler" not in st.session_state:
+    st.warning("Je bent niet ingelogd. Ga terug naar de Home pagina.")
+    st.stop()
+
+speler_naam = st.session_state["ingelogde_speler"]
+
+# Supabase Connectie
+@st.cache_resource
+def init_connection():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_connection()
+TABEL_NAAM = st.secrets["TABEL_NAAM"]
+
+# --- HULPFUNCTIES & BEVEILIGING ---
 def normalize_name_logic(text):
     if not isinstance(text, str): return ""
     import unicodedata
@@ -16,6 +36,11 @@ def normalize_name_logic(text):
 
 def get_file_mod_time(filepath):
     return os.path.getmtime(filepath) if os.path.exists(filepath) else 0
+
+def generate_signature(data_dict):
+    data_str = json.dumps(data_dict, sort_keys=True)
+    salt = "GeheimeKlassiekerSleutel2026"
+    return hashlib.sha256((data_str + salt).encode('utf-8')).hexdigest()
 
 # --- DATA LADEN ---
 @st.cache_data
@@ -97,6 +122,7 @@ if df.empty:
 if "game_base_team" not in st.session_state: st.session_state.game_base_team = []
 if "game_transfers" not in st.session_state: st.session_state.game_transfers = []
 if "game_picks" not in st.session_state: st.session_state.game_picks = {r: {"extras": [], "joker": None} for r in races}
+if "loaded_timestamp" not in st.session_state: st.session_state.loaded_timestamp = None
 
 def get_active_base_team(race):
     active = list(st.session_state.game_base_team)
@@ -111,26 +137,92 @@ def get_active_base_team(race):
 st.title("🎮 Custom Klassiekers Spel")
 st.markdown("Welkom bij je eigen wielerspel! Kies 10 vaste renners, selecteer per koers 3 extra's en bepaal je Joker (> plek 50).")
 
-# Save / Load
+# --- SIDEBAR: OPSLAAN & LADEN ---
 with st.sidebar:
-    st.header("💾 Bestand")
-    save_data = {
+    st.header(f"👤 Profiel: {speler_naam.capitalize()}")
+    
+    # 1. CLOUD OPSLAAN & LADEN
+    timestamp_nu = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+    current_save_data = {
         "base_team": st.session_state.game_base_team,
         "transfers": st.session_state.game_transfers,
-        "picks": st.session_state.game_picks
+        "picks": st.session_state.game_picks,
+        "timestamp": timestamp_nu
     }
-    st.download_button("📥 Opslaan (Download Team)", data=json.dumps(save_data), file_name="mijn_team.json", mime="application/json")
-    
+    signature = generate_signature(current_save_data)
+    secure_export = {"data": current_save_data, "signature": signature}
+
+    st.write("☁️ **Database Acties**")
+    if st.button("💾 Opslaan in Cloud", type="primary", use_container_width=True):
+        try:
+            payload = {
+                "username": speler_naam,
+                "custom_team": secure_export
+            }
+            # Upsert update de rij als username al bestaat, anders maakt hij een nieuwe aan
+            response = supabase.table(TABEL_NAAM).upsert(payload, on_conflict="username").execute()
+            st.success("✅ Succesvol opgeslagen in de cloud!")
+            st.session_state.loaded_timestamp = timestamp_nu
+        except Exception as e:
+            st.error(f"Fout bij opslaan: {e}")
+
+    if st.button("🔄 Laad mijn cloud profiel", use_container_width=True):
+        try:
+            response = supabase.table(TABEL_NAAM).select("custom_team").eq("username", speler_naam).execute()
+            if response.data and len(response.data) > 0 and response.data[0].get("custom_team"):
+                cloud_data = response.data[0]["custom_team"]
+                
+                loaded_data = cloud_data.get("data", {})
+                loaded_sig = cloud_data.get("signature", "")
+                
+                if generate_signature(loaded_data) != loaded_sig:
+                    st.error("🚨 Integriteitsfout in cloud data!")
+                else:
+                    st.session_state.game_base_team = loaded_data.get("base_team", [])
+                    st.session_state.game_transfers = loaded_data.get("transfers", [])
+                    st.session_state.loaded_timestamp = loaded_data.get("timestamp", "Onbekend")
+                    
+                    saved_picks = loaded_data.get("picks", {})
+                    for r in races:
+                        if r in saved_picks: st.session_state.game_picks[r] = saved_picks[r]
+                    st.success("✅ Team succesvol ingeladen!")
+                    st.rerun()
+            else:
+                st.warning("Geen cloud opslag gevonden voor jouw account.")
+        except Exception as e:
+            st.error(f"Fout bij ophalen database: {e}")
+
     st.divider()
-    uploaded_file = st.file_uploader("📂 Inladen (Upload Team)", type="json")
-    if uploaded_file is not None and st.button("Laad Team in"):
-        data = json.load(uploaded_file)
-        st.session_state.game_base_team = data.get("base_team", [])
-        st.session_state.game_transfers = data.get("transfers", [])
-        saved_picks = data.get("picks", {})
-        for r in races:
-            if r in saved_picks: st.session_state.game_picks[r] = saved_picks[r]
-        st.rerun()
+
+    # 2. LOKALE JSON BACKUP (FAIL-SAFE)
+    st.write("📁 **Lokale Backup (.json)**")
+    st.download_button("📥 Download Team", data=json.dumps(secure_export), file_name=f"{speler_naam}_team.json", mime="application/json", use_container_width=True)
+    
+    uploaded_file = st.file_uploader("📂 Upload Team", type="json")
+    if uploaded_file is not None and st.button("Laad .json in", use_container_width=True):
+        try:
+            full_load = json.load(uploaded_file)
+            loaded_data = full_load.get("data", {})
+            loaded_sig = full_load.get("signature", "")
+            
+            if generate_signature(loaded_data) != loaded_sig:
+                st.error("🚨 **VALSSPEL DETECTIE!** Bestand is gemanipuleerd.")
+            else:
+                st.session_state.game_base_team = loaded_data.get("base_team", [])
+                st.session_state.game_transfers = loaded_data.get("transfers", [])
+                st.session_state.loaded_timestamp = loaded_data.get("timestamp", "Onbekend")
+                saved_picks = loaded_data.get("picks", {})
+                for r in races:
+                    if r in saved_picks: st.session_state.game_picks[r] = saved_picks[r]
+                st.success("✅ Lokaal bestand geladen!")
+                st.rerun()
+        except:
+            st.error("Ongeldig bestand.")
+
+    # Laat de timestamp zien
+    if st.session_state.loaded_timestamp:
+        st.divider()
+        st.info(f"🕒 **Laatste opslagmoment:**\n\n{st.session_state.loaded_timestamp}")
 
 tab1, tab2, tab3, tab4 = st.tabs(["🛡️ Vaste Team & Wissels", "🏁 Per Koers Selectie", "📈 Verwachte Uitslagen", "🏆 Score & Uitslag"])
 
@@ -143,7 +235,7 @@ with tab1:
     
     if st.button("Bevestig Basis Team", type="primary"):
         st.session_state.game_base_team = selected_10
-        st.success("Basis team opgeslagen!")
+        st.success("Basis team geselecteerd! Vergeet niet op 'Opslaan in Cloud' te drukken.")
         st.rerun()
         
     st.divider()
@@ -178,7 +270,6 @@ with tab2:
         
         active_base = get_active_base_team(race)
         starters_race = df[df[race] == 1]['Renner'].tolist()
-        
         base_starters = [r for r in active_base if r in starters_race]
         
         with c_left:
@@ -200,7 +291,7 @@ with tab2:
             
             st.divider()
             st.subheader("🃏 Kies je Joker (Exp. Rank > 50)")
-            st.write("Kies een renner waarvan de verwachte uitslag > 50 is. Eindigt hij in de Top 10? Dan verdien je 50 bonuspunten!")
+            st.write("Kies een renner waarvan de verwachte uitslag > 50 is. Eindigt hij in de Top 10? Dan verdien je **150 bonuspunten**!")
             
             race_ranks = exp_ranks.get(race, {})
             joker_candidates = [r for r in starters_race if race_ranks.get(r, 999) > 50]
@@ -215,7 +306,8 @@ with tab2:
             if st.button(f"Sla {race} opstelling op", type="primary"):
                 st.session_state.game_picks[race]['extras'] = new_extras
                 st.session_state.game_picks[race]['joker'] = None if new_joker == "Geen Joker" else new_joker
-                st.success("Opgeslagen!")
+                st.success("Selectie gemaakt! Vergeet niet links op 'Opslaan in Cloud' te klikken als je klaar bent.")
+                st.rerun()
 
 with tab3:
     st.header("Verwachte Uitslagen (AI Model)")
@@ -234,8 +326,11 @@ with tab3:
 
 with tab4:
     st.header("🏆 Score & Actuele Uitslagen")
-    st.write("Zodra `uitslagen.csv` is ingeladen, worden je punten hier berekend.")
+    st.write("Zodra `uitslagen.csv` is ingeladen, worden de punten hier berekend.")
     
+    if st.session_state.loaded_timestamp:
+        st.info(f"**Validatie Check:** Het team in beeld is verzegeld op: `{st.session_state.loaded_timestamp}`. Is dit gewijzigd ná de start van de race? Dan telt de koers niet!")
+
     u_time = get_file_mod_time("uitslagen.csv")
     df_uitslagen = get_uitslagen(u_time, df['Renner'].tolist())
     
@@ -244,6 +339,7 @@ with tab4:
     else:
         pt_scale = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1]
         totaal_score = 0
+        
         for r in races:
             df_r = df_uitslagen[df_uitslagen['Race'] == r]
             if not df_r.empty:
@@ -269,12 +365,12 @@ with tab4:
                             score_details.append(f"{renner} (Plek {r_int}): **{pts} pt**")
                             
                         if renner == joker and r_int <= 10:
-                            race_score += 50
-                            score_details.append(f"🃏 JOKER {renner} (Plek {r_int}): **+50 pt BONUS**")
+                            race_score += 150
+                            score_details.append(f"🃏 JOKER {renner} (Plek {r_int}): **+150 pt BONUS**")
                             
                 totaal_score += race_score
                 st.write(f"**Score deze koers:** {race_score} punten")
-                for d in score_details: st.write("- " + d)
-                st.divider()
-                
-        st.success(f"### 🎉 TOTAALSCORE: {totaal_score} PUNTEN")
+                if score_details:
+                    for d in score_details: st.write("- " + d)
+                else:
+                    st.write
