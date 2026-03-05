@@ -26,9 +26,12 @@ def home_page():
         * **Evaluator:** Test en vergelijk live hoe verschillende wiskundige modellen presteren ten opzichte van jouw eigen selectie.
 
         **Sporza**
-        * **Klassiekers:** 🚧 *(WIP)* Bouw je team binnen de limieten van 120M, 20 renners en maximaal 4 per ploeg.
+        * **Klassiekers:** Bouw je team binnen de limieten van 120M, 20 renners en maximaal 4 per ploeg, inclusief de 12-starters regel.
         * **Grand Tour:** *(Binnenkort)* Optimaliseer je Sporza-team voor de grote rondes.
         * **Evaluator:** *(Binnenkort)* Test en vergelijk Sporza modellen in de praktijk.
+        
+        **Vriendencompetitie**
+        * **Eigen Spel (Custom):** 🎮 Speel je eigen custom spel met vrienden! Kies 10 vaste renners, doe 2 transfers en selecteer per koers je 3 extra's en je Joker.
         
         ---
         
@@ -48,16 +51,19 @@ scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassieke
 scorito_grand_tour = st.Page("pages/Scorito_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
 scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Evaluator", icon="📊")
 
-sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="[WIP] Klassiekers", icon="🏁")
+sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="Klassiekers", icon="🏁")
 sporza_grand_tour = st.Page("pages/Sporza_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
 sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="[Binnenkort] Evaluator", icon="📊")
+
+eigen_spel = st.Page("pages/EigenSpel.py", title="Custom Klassiekers Spel", icon="🎮")
 
 # 3. Groepeer de navigatie voor de sidebar
 pg = st.navigation({
     "Info": [home],
     "Cycling Fantasy": [cf_pagina],
     "Scorito": [scorito_klassiekers, scorito_grand_tour, scorito_evaluator],
-    "Sporza": [sporza_klassiekers, sporza_grand_tour, sporza_evaluator]
+    "Sporza": [sporza_klassiekers, sporza_grand_tour, sporza_evaluator],
+    "Eigen Competitie": [eigen_spel]
 })
 
 # 4. Voer de applicatie uit
