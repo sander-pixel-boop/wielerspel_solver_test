@@ -159,7 +159,6 @@ with st.sidebar:
                 "username": speler_naam,
                 "custom_team": secure_export
             }
-            # Upsert update de rij als username al bestaat, anders maakt hij een nieuwe aan
             response = supabase.table(TABEL_NAAM).upsert(payload, on_conflict="username").execute()
             st.success("✅ Succesvol opgeslagen in de cloud!")
             st.session_state.loaded_timestamp = timestamp_nu
@@ -219,7 +218,6 @@ with st.sidebar:
         except:
             st.error("Ongeldig bestand.")
 
-    # Laat de timestamp zien
     if st.session_state.loaded_timestamp:
         st.divider()
         st.info(f"🕒 **Laatste opslagmoment:**\n\n{st.session_state.loaded_timestamp}")
@@ -230,7 +228,9 @@ with tab1:
     st.header("Jouw 10 Vaste Renners")
     st.write("Kies hier je 10 basisrenners voor het hele spel. Er is geen budget.")
     
-    all_riders = sorted(df['Renner'].tolist())
+    # Sorteer alle renners op basis van Algemene Rating (AVG) van hoog naar laag
+    all_riders = df.sort_values(by='AVG', ascending=False)['Renner'].tolist()
+    
     selected_10 = st.multiselect("Selecteer exact 10 renners:", options=all_riders, default=st.session_state.game_base_team, max_selections=10)
     
     if st.button("Bevestig Basis Team", type="primary"):
@@ -269,7 +269,12 @@ with tab2:
         c_left, c_right = st.columns(2, gap="large")
         
         active_base = get_active_base_team(race)
+        
+        # Sorteer de startlijst op basis van de VERWACHTE UITSLAG voor DEZE SPECIFIEKE KOERS
+        race_ranks = exp_ranks.get(race, {})
         starters_race = df[df[race] == 1]['Renner'].tolist()
+        starters_race = sorted(starters_race, key=lambda x: race_ranks.get(x, 999))
+        
         base_starters = [r for r in active_base if r in starters_race]
         
         with c_left:
@@ -281,7 +286,7 @@ with tab2:
                 
         with c_right:
             st.subheader("➕ Kies 3 Extra Renners")
-            st.write("Kies 3 renners van de startlijst die je alléén voor deze koers toevoegt.")
+            st.write("Kies 3 renners van de startlijst die je alléén voor deze koers toevoegt. (Gesorteerd op winstkans!)")
             available_extras = [r for r in starters_race if r not in active_base]
             
             cur_extras = st.session_state.game_picks[race]['extras']
@@ -293,7 +298,6 @@ with tab2:
             st.subheader("🃏 Kies je Joker (Exp. Rank > 50)")
             st.write("Kies een renner waarvan de verwachte uitslag > 50 is. Eindigt hij in de Top 10? Dan verdien je **150 bonuspunten**!")
             
-            race_ranks = exp_ranks.get(race, {})
             joker_candidates = [r for r in starters_race if race_ranks.get(r, 999) > 50]
             joker_opts = {r: f"{r} (Verwacht: {race_ranks.get(r, 999)})" for r in joker_candidates}
             
@@ -373,4 +377,7 @@ with tab4:
                 if score_details:
                     for d in score_details: st.write("- " + d)
                 else:
-                    st.write
+                    st.write("- *Geen punten gescoord in deze koers.*")
+                st.divider()
+                
+        st.success(f"### 🎉 TOTAALSCORE: {totaal_score} PUNTEN")
