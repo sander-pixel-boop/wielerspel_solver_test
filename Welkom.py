@@ -55,7 +55,7 @@ sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="Klassiekers
 sporza_grand_tour = st.Page("pages/Sporza_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
 sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="[Binnenkort] Evaluator", icon="📊")
 
-eigen_spel = st.Page("pages/EigenSpel.py", title="Custom Klassiekers Spel", icon="🎮")
+eigen_spel = st.Page("pages/Het_Spel.py", title="Custom Klassiekers Spel", icon="🎮")
 
 # 3. Groepeer de navigatie voor de sidebar
 pg = st.navigation({
