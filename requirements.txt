@@ -5,3 +5,5 @@ plotly
 thefuzz
 pypdf
 openpyxl
+streamlit-authenticator
+supabase
