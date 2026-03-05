@@ -33,7 +33,6 @@ def load_game_data():
         overlap_cols = [c for c in df_stats.columns if c in df_prog.columns and c != 'Renner']
         df_stats = df_stats.drop(columns=overlap_cols)
         
-        # Fuzzy matching (verkort voor overzichtelijkheid)
         full_names = {normalize_name_logic(n): n for n in df_stats['Renner'].unique()}
         name_mapping = {}
         for short in df_prog['Renner'].unique():
@@ -96,7 +95,7 @@ if df.empty:
 
 # --- STATE MANAGEMENT ---
 if "game_base_team" not in st.session_state: st.session_state.game_base_team = []
-if "game_transfers" not in st.session_state: st.session_state.game_transfers = [] # List of dicts: {uit, in, moment}
+if "game_transfers" not in st.session_state: st.session_state.game_transfers = []
 if "game_picks" not in st.session_state: st.session_state.game_picks = {r: {"extras": [], "joker": None} for r in races}
 
 def get_active_base_team(race):
@@ -112,7 +111,7 @@ def get_active_base_team(race):
 st.title("🎮 Custom Klassiekers Spel")
 st.markdown("Welkom bij je eigen wielerspel! Kies 10 vaste renners, selecteer per koers 3 extra's en bepaal je Joker (> plek 50).")
 
-# Save / Load functionaliteit
+# Save / Load
 with st.sidebar:
     st.header("💾 Bestand")
     save_data = {
@@ -128,7 +127,6 @@ with st.sidebar:
         data = json.load(uploaded_file)
         st.session_state.game_base_team = data.get("base_team", [])
         st.session_state.game_transfers = data.get("transfers", [])
-        # Merge picks safely
         saved_picks = data.get("picks", {})
         for r in races:
             if r in saved_picks: st.session_state.game_picks[r] = saved_picks[r]
@@ -196,7 +194,6 @@ with tab2:
             available_extras = [r for r in starters_race if r not in active_base]
             
             cur_extras = st.session_state.game_picks[race]['extras']
-            # Zorg dat oude keuzes die nu in basis zitten eruit gehaald worden
             cur_extras = [x for x in cur_extras if x in available_extras] 
             
             new_extras = st.multiselect("Selecteer 3 extra's:", options=available_extras, default=cur_extras, max_selections=3)
@@ -205,18 +202,14 @@ with tab2:
             st.subheader("🃏 Kies je Joker (Exp. Rank > 50)")
             st.write("Kies een renner waarvan de verwachte uitslag > 50 is. Eindigt hij in de Top 10? Dan verdien je 50 bonuspunten!")
             
-            # Bepaal wie in aanmerking komt voor Joker
             race_ranks = exp_ranks.get(race, {})
             joker_candidates = [r for r in starters_race if race_ranks.get(r, 999) > 50]
-            
-            # Voeg verwachte rank toe aan de dropdown voor duidelijkheid
             joker_opts = {r: f"{r} (Verwacht: {race_ranks.get(r, 999)})" for r in joker_candidates}
             
             cur_joker = st.session_state.game_picks[race]['joker']
             if cur_joker not in joker_candidates: cur_joker = None
             
             joker_idx = list(joker_opts.keys()).index(cur_joker) + 1 if cur_joker else 0
-            
             new_joker = st.selectbox("Selecteer Joker:", options=["Geen Joker"] + list(joker_opts.keys()), index=joker_idx, format_func=lambda x: joker_opts.get(x, x))
             
             if st.button(f"Sla {race} opstelling op", type="primary"):
@@ -240,4 +233,48 @@ with tab3:
     st.dataframe(pred_df.style.apply(highlight_jokers, axis=1), hide_index=True, use_container_width=True)
 
 with tab4:
-    st.header("🏆 Score & Act
+    st.header("🏆 Score & Actuele Uitslagen")
+    st.write("Zodra `uitslagen.csv` is ingeladen, worden je punten hier berekend.")
+    
+    u_time = get_file_mod_time("uitslagen.csv")
+    df_uitslagen = get_uitslagen(u_time, df['Renner'].tolist())
+    
+    if df_uitslagen.empty:
+        st.info("Nog geen uitslagen gevonden in de database.")
+    else:
+        pt_scale = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1]
+        totaal_score = 0
+        for r in races:
+            df_r = df_uitslagen[df_uitslagen['Race'] == r]
+            if not df_r.empty:
+                st.subheader(f"🏁 Uitslag: {r}")
+                
+                active_base = get_active_base_team(r)
+                extras = st.session_state.game_picks[r]['extras']
+                joker = st.session_state.game_picks[r]['joker']
+                mijn_starters = active_base + extras
+                
+                race_score = 0
+                score_details = []
+                
+                for idx, row in df_r.iterrows():
+                    rank = row['Rnk']
+                    if str(rank).isdigit():
+                        r_int = int(rank)
+                        renner = row['Renner']
+                        
+                        if renner in mijn_starters and r_int <= 20:
+                            pts = pt_scale[r_int - 1]
+                            race_score += pts
+                            score_details.append(f"{renner} (Plek {r_int}): **{pts} pt**")
+                            
+                        if renner == joker and r_int <= 10:
+                            race_score += 50
+                            score_details.append(f"🃏 JOKER {renner} (Plek {r_int}): **+50 pt BONUS**")
+                            
+                totaal_score += race_score
+                st.write(f"**Score deze koers:** {race_score} punten")
+                for d in score_details: st.write("- " + d)
+                st.divider()
+                
+        st.success(f"### 🎉 TOTAALSCORE: {totaal_score} PUNTEN")
