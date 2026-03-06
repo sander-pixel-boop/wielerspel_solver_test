@@ -21,7 +21,6 @@ if "ingelogde_speler" not in st.session_state:
 
 speler_naam = st.session_state["ingelogde_speler"]
 
-# Supabase Connectie
 @st.cache_resource
 def init_connection():
     url = st.secrets["SUPABASE_URL"]
@@ -168,11 +167,30 @@ def calculate_dynamic_ev(df, available_races, koers_stat_map, method, skip_races
         if k not in skip_races:
             for i, idx in enumerate(starters.index):
                 v = 0.0
-                if "Scorito" in method: v = pts[i] if i < 20 else 0.0
-                elif "Macht 4" in method: v = (starters.loc[idx, stat]/100)**4 * 100
-                elif "Macht 10" in method: v = (starters.loc[idx, stat]/100)**10 * 100
-                elif "Tiers" in method: v = 80 if i<3 else (45 if i<8 else (20 if i<15 else 0))
-                if i==0: v*=3; elif i==1: v*=2.5; elif i==2: v*=2
+                if "Scorito" in method:
+                    v = pts[i] if i < 20 else 0.0
+                elif "Macht 4" in method:
+                    v = (starters.loc[idx, stat]/100)**4 * 100
+                elif "Macht 10" in method:
+                    v = (starters.loc[idx, stat]/100)**10 * 100
+                elif "Tiers" in method:
+                    if i < 3:
+                        v = 80
+                    elif i < 8:
+                        v = 45
+                    elif i < 15:
+                        v = 20
+                    else:
+                        v = 0
+                
+                # Kopman multipliers
+                if i == 0:
+                    v *= 3
+                elif i == 1:
+                    v *= 2.5
+                elif i == 2:
+                    v *= 2
+                    
                 ev_col.loc[idx] = v
         df[f'EV_{k}'] = ev_col
     df['EV_all'] = df[[f'EV_{k}' for k in available_races]].sum(axis=1)
@@ -224,7 +242,6 @@ def rebuild_team_and_transfers(df, max_bud, min_bud, max_ren, new_base, t_moment
         prob += pulp.lpSum(y[k][i] for i in df_idx) <= 1
         prob += pulp.lpSum(y[k][i] for i in df_idx) == pulp.lpSum(z[k][i] for i in df_idx)
     prob += pulp.lpSum(x[i] for i in df_idx) + sum(pulp.lpSum(y[k][i] for i in df_idx) for k in range(3)) == max_ren
-    # Budget constraints for all 4 states
     p = df['Prijs']
     prob += pulp.lpSum((x[i]+y[0][i]+y[1][i]+y[2][i])*p[i] for i in df_idx) <= max_bud
     prob += pulp.lpSum((x[i]+z[0][i]+y[1][i]+y[2][i])*p[i] for i in df_idx) <= max_bud
@@ -253,7 +270,6 @@ if "transfer_plan" not in st.session_state: st.session_state.transfer_plan = []
 with st.sidebar:
     st.header(f"👤 Profiel: {speler_naam.capitalize()}")
     
-    # CLOUD ACTIES
     if st.button("💾 Opslaan in Cloud", type="primary", use_container_width=True):
         try:
             team_data = {"selected_riders": st.session_state.selected_riders, "transfer_plan": st.session_state.transfer_plan, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
@@ -301,7 +317,6 @@ with st.sidebar:
             if bt: st.session_state.selected_riders = bt; st.session_state.transfer_plan = tp; st.rerun()
         else: st.error("Geen oplossing.")
 
-# --- TABS ---
 st.title("🏆 Voorjaarsklassiekers: Scorito")
 tab1, tab2, tab3, tab4 = st.tabs(["🚀 Team & Dashboard", "🗓️ Matrix", "📊 Kopmannen", "📋 Database"])
 
