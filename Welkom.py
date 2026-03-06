@@ -1,9 +1,7 @@
 import streamlit as st
 
-# 1. Paginaconfiguratie (MOET als eerste regel code)
 st.set_page_config(page_title="Wieler Spellen Solver", page_icon="🚴‍♂️")
 
-# 2. Inlog Systeem
 def check_password():
     def password_entered():
         user = st.session_state["username_input"].strip()
@@ -32,24 +30,28 @@ def check_password():
 if not check_password():
     st.stop()
 
-# 3. Homepagina Definitie
 def home_page():
     speler = st.session_state.get("ingelogde_speler", "bezoeker").capitalize()
     st.write(f"# Welkom bij de Wieler Spellen Solver, {speler}! 🚴‍♂️")
     st.markdown("👈 **Kies een spel in het menu aan de linkerkant om te beginnen!**")
 
-# 4. Pagina Navigatie
 home = st.Page(home_page, title="Home", icon="🏠", default=True)
 cf_pagina = st.Page("pages/Cycling_Fantasy.py", title="CF Dashboard", icon="🚴")
 scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassiekers", icon="🏆")
+scorito_grand_tour = st.Page("pages/Scorito_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
+scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Evaluator", icon="📊")
+
 sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="Klassiekers", icon="🏁")
+sporza_grand_tour = st.Page("pages/Sporza_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
+sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="[Binnenkort] Evaluator", icon="📊")
+
 eigen_spel = st.Page("pages/Het_Spel.py", title="Custom Klassiekers Spel", icon="🎮")
 
 pg = st.navigation({
     "Info": [home],
     "Cycling Fantasy": [cf_pagina],
-    "Scorito": [scorito_klassiekers],
-    "Sporza": [sporza_klassiekers],
+    "Scorito": [scorito_klassiekers, scorito_grand_tour, scorito_evaluator],
+    "Sporza": [sporza_klassiekers, sporza_grand_tour, sporza_evaluator],
     "Eigen Competitie": [eigen_spel]
 })
 
