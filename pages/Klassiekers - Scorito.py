@@ -270,23 +270,63 @@ if "transfer_plan" not in st.session_state: st.session_state.transfer_plan = []
 with st.sidebar:
     st.header(f"👤 Profiel: {speler_naam.capitalize()}")
     
-    if st.button("💾 Opslaan in Cloud", type="primary", use_container_width=True):
-        try:
-            team_data = {"selected_riders": st.session_state.selected_riders, "transfer_plan": st.session_state.transfer_plan, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
-            supabase.table(TABEL_NAAM).upsert({"username": speler_naam, "scorito_team": team_data}, on_conflict="username").execute()
-            st.success("Cloud-backup geslaagd!")
-        except Exception as e: st.error(f"Fout: {e}")
+    st.write("☁️ **Cloud Database**")
+    c_cloud1, c_cloud2 = st.columns(2)
+    with c_cloud1:
+        if st.button("💾 Opslaan", type="primary", use_container_width=True):
+            try:
+                team_data = {"selected_riders": st.session_state.selected_riders, "transfer_plan": st.session_state.transfer_plan, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
+                supabase.table(TABEL_NAAM).upsert({"username": speler_naam, "scorito_team": team_data}, on_conflict="username").execute()
+                st.success("Cloud-backup geslaagd!")
+            except Exception as e: st.error(f"Fout: {e}")
+    with c_cloud2:
+        if st.button("🔄 Inladen", use_container_width=True):
+            try:
+                res = supabase.table(TABEL_NAAM).select("scorito_team").eq("username", speler_naam).execute()
+                if res.data and res.data[0]['scorito_team']:
+                    d = res.data[0]['scorito_team']
+                    st.session_state.selected_riders = d.get("selected_riders", [])
+                    st.session_state.transfer_plan = d.get("transfer_plan", [])
+                    st.success(f"Team geladen (van {d.get('ts', '?')})"); st.rerun()
+                else: st.warning("Geen team gevonden.")
+            except Exception as e: st.error(f"Fout: {e}")
 
-    if st.button("🔄 Laden uit Cloud", use_container_width=True):
+    st.divider()
+    st.write("📁 **Lokale Backup (.json)**")
+    
+    # Exporteren
+    save_data = {"selected_riders": st.session_state.selected_riders, "transfer_plan": st.session_state.transfer_plan}
+    st.download_button("📥 Download als .JSON", data=json.dumps(save_data), file_name=f"{speler_naam}_scorito_team.json", mime="application/json", use_container_width=True)
+    
+    # Importeren
+    uploaded_file = st.file_uploader("📂 Upload Team (.json)", type="json")
+    if uploaded_file is not None and st.button("Laad .json in", use_container_width=True):
         try:
-            res = supabase.table(TABEL_NAAM).select("scorito_team").eq("username", speler_naam).execute()
-            if res.data and res.data[0]['scorito_team']:
-                d = res.data[0]['scorito_team']
-                st.session_state.selected_riders = d.get("selected_riders", [])
-                st.session_state.transfer_plan = d.get("transfer_plan", [])
-                st.success(f"Team geladen (van {d.get('ts', '?')})"); st.rerun()
-            else: st.warning("Geen team gevonden.")
-        except Exception as e: st.error(f"Fout: {e}")
+            ld = json.load(uploaded_file)
+            oude_selectie = ld.get("selected_riders", [])
+            oud_plan = ld.get("transfer_plan", [])
+            
+            huidige_renners = df_raw['Renner'].tolist()
+            def update_naam(naam):
+                if naam in huidige_renners: return naam
+                match = process.extractOne(naam, huidige_renners, scorer=fuzz.token_set_ratio)
+                return match[0] if match and match[1] > 80 else naam
+
+            st.session_state.selected_riders = [update_naam(r) for r in oude_selectie if update_naam(r) in huidige_renners]
+            
+            nieuw_plan = []
+            if isinstance(oud_plan, dict) and "uit" in oud_plan and "in" in oud_plan:
+                for r_uit, r_in in zip(oud_plan["uit"], oud_plan["in"]):
+                    nieuw_plan.append({"uit": update_naam(r_uit), "in": update_naam(r_in), "moment": "PR"})
+            elif isinstance(oud_plan, list):
+                for t in oud_plan:
+                    nieuw_plan.append({"uit": update_naam(t["uit"]), "in": update_naam(t["in"]), "moment": t["moment"]})
+
+            st.session_state.transfer_plan = nieuw_plan
+            st.success("✅ Lokaal bestand geladen!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Fout bij inladen: {e}")
 
     st.divider()
     verreden = get_verreden_koersen()
