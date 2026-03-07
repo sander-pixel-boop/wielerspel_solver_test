@@ -28,12 +28,6 @@ supabase = init_connection()
 tabel_naam = st.secrets["TABEL_NAAM"]
 
 # --- HULPFUNCTIES ---
-def normalize_name_logic(text):
-    if not isinstance(text, str): return ""
-    import unicodedata
-    nfkd_form = unicodedata.normalize('NFKD', text.lower().strip())
-    return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
-
 def generate_signature(data_dict):
     data_str = json.dumps(data_dict, sort_keys=True)
     salt = "GeheimeKlassiekerSleutel2026"
@@ -54,6 +48,12 @@ def load_game_data():
         koers_map = {"NOK":"SPR","BKC":"SPR","MSR":"AVG","RVB":"SPR","E3":"COB","IFF":"SPR","DDV":"COB","RVV":"COB","SP":"SPR","PR":"COB","RVL":"SPR","BRP":"HLL","AGT":"HLL","WAP":"HLL","LBL":"HLL"}
         
         df = pd.merge(df_p, df_s[['Renner', 'COB', 'HLL', 'SPR', 'AVG', 'Team']], on='Renner', how='left')
+        
+        # Zorg dat stats numeriek zijn voor de top 50 berekening
+        for col in ['COB', 'HLL', 'SPR', 'AVG']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                
         return df, available, koers_map
     except:
         return pd.DataFrame({'Renner': ['Wout van Aert', 'Mathieu van der Poel', 'Tadej Pogačar']}), ["OML", "KBK", "STR"], {}
@@ -62,15 +62,10 @@ df, races, k_map = load_game_data()
 alle_renners = sorted(df['Renner'].dropna().unique()) if not df.empty else []
 
 # --- STATE ---
-if "game_base_team" not in st.session_state: st.session_state.game_base_team = []
-if "game_transfers" not in st.session_state: 
-    st.session_state.game_transfers = [{"uit": None, "in": None, "moment": None} for _ in range(5)]
-    
-while len(st.session_state.game_transfers) < 5:
-    st.session_state.game_transfers.append({"uit": None, "in": None, "moment": None})
-
+if "game_base_team" not in st.session_state: 
+    st.session_state.game_base_team = []
 if "game_picks" not in st.session_state: 
-    st.session_state.game_picks = {r: {"extras": [], "joker": None} for r in races}
+    st.session_state.game_picks = {r: {"extras": [], "dark_horse": None, "kopman": None} for r in races}
 
 # --- UI ---
 st.title(f"🎮 Custom Spel: {speler_naam.capitalize()}")
@@ -78,7 +73,7 @@ st.title(f"🎮 Custom Spel: {speler_naam.capitalize()}")
 with st.sidebar:
     st.header("Opslag")
     if st.button("💾 Opslaan in Cloud", type="primary", use_container_width=True):
-        data = {"base": st.session_state.game_base_team, "transfers": st.session_state.game_transfers, "picks": st.session_state.game_picks}
+        data = {"base": st.session_state.game_base_team, "picks": st.session_state.game_picks}
         payload = {"username": speler_naam, "custom_team": {"data": data, "signature": generate_signature(data)}}
         supabase.table(tabel_naam).upsert(payload, on_conflict="username").execute()
         st.success("Opgeslagen!")
@@ -88,96 +83,97 @@ with st.sidebar:
         if res.data:
             d = res.data[0]["custom_team"]["data"]
             st.session_state.game_base_team = d.get("base", [])
-            
-            geladen_transfers = d.get("transfers", [])
-            while len(geladen_transfers) < 5:
-                geladen_transfers.append({"uit": None, "in": None, "moment": None})
-            st.session_state.game_transfers = geladen_transfers
-            
-            st.session_state.game_picks = d.get("picks", {r: {"extras": [], "joker": None} for r in races})
+            st.session_state.game_picks = d.get("picks", {r: {"extras": [], "dark_horse": None, "kopman": None} for r in races})
             st.rerun()
 
-st.write("Stel hieronder je team samen, plan je transfers in en kies je kopmannen!")
+st.write("Kies je 10 vaste renners en vul per koers je 3 extra renners, je dark horse en je kopman aan.")
 st.divider()
 
 # --- INTERFACE COMPONENTEN ---
-tab1, tab2, tab3 = st.tabs(["🚴 Basis Team", "🔄 Transfers", "🏁 Per Koers"])
+tab1, tab2 = st.tabs(["🚴 Basis Team (10)", "🏁 Selecties per Koers"])
 
 # Tab 1: Basis Team Selectie
 with tab1:
-    st.subheader("Selecteer je Basis Team (Max 20)")
+    st.subheader("Selecteer je Basis Team (Max 10)")
     
     geselecteerd = st.multiselect(
-        "Kies je renners:", 
+        "Kies je 10 vaste renners:", 
         options=alle_renners, 
         default=st.session_state.game_base_team,
-        max_selections=20
+        max_selections=10
     )
     
     st.session_state.game_base_team = geselecteerd
-    st.progress(len(geselecteerd) / 20)
-    st.write(f"**{len(geselecteerd)} / 20** geselecteerd")
+    st.progress(len(geselecteerd) / 10 if len(geselecteerd) <= 10 else 1.0)
+    st.write(f"**{len(geselecteerd)} / 10** geselecteerd")
 
-# Tab 2: Transfers
+# Tab 2: Selecties per koers
 with tab2:
-    st.subheader("Plan je Transfers (Max 5)")
-    st.info("Kies welke renner eruit gaat, wie erin komt, en NA welke koers dit gebeurt.")
-    
-    for i in range(5):
-        col1, col2, col3 = st.columns(3)
-        t = st.session_state.game_transfers[i]
-        
-        with col1:
-            uit_opties = [""] + st.session_state.game_base_team
-            idx_uit = uit_opties.index(t["uit"]) if t["uit"] in uit_opties else 0
-            gekozen_uit = st.selectbox(f"Wissel {i+1} UIT", options=uit_opties, index=idx_uit, key=f"uit_{i}")
-            st.session_state.game_transfers[i]["uit"] = gekozen_uit if gekozen_uit else None
-            
-        with col2:
-            in_opties = [""] + alle_renners
-            idx_in = in_opties.index(t["in"]) if t["in"] in in_opties else 0
-            gekozen_in = st.selectbox(f"Wissel {i+1} IN", options=in_opties, index=idx_in, key=f"in_{i}")
-            st.session_state.game_transfers[i]["in"] = gekozen_in if gekozen_in else None
-            
-        with col3:
-            moment_opties = [""] + races
-            idx_moment = moment_opties.index(t["moment"]) if t["moment"] in moment_opties else 0
-            gekozen_moment = st.selectbox(f"Na koers", options=moment_opties, index=idx_moment, key=f"mom_{i}")
-            st.session_state.game_transfers[i]["moment"] = gekozen_moment if gekozen_moment else None
-
-# Tab 3: Selecties per koers (Kopmannen)
-with tab3:
-    st.subheader("Kopman Selectie & Actieve Ploeg")
-    koers_keuze = st.selectbox("Kies de koers om je selectie te bekijken:", races)
+    st.subheader("Kopman, Extra's & Dark Horse")
+    koers_keuze = st.selectbox("Kies een koers:", races)
     
     if koers_keuze:
-        actieve_team = list(st.session_state.game_base_team) 
-        idx_curr = races.index(koers_keuze) if koers_keuze in races else 0
-        
-        # Bereken de actieve ploeg o.b.v. de transfers
-        for t in st.session_state.game_transfers:
-            if t["uit"] and t["in"] and t["moment"]:
-                if t["moment"] in races:
-                    idx_moment = races.index(t["moment"])
-                    # Als de huidige koers NA het wisselmoment valt, voer transfer door
-                    if idx_curr > idx_moment:
-                        if t["uit"] in actieve_team: actieve_team.remove(t["uit"])
-                        if t["in"] not in actieve_team: actieve_team.append(t["in"])
-        
-        if actieve_team:
-            st.write("### Je actieve ploeg voor deze koers:")
-            st.write(", ".join(sorted(actieve_team)))
+        if koers_keuze not in st.session_state.game_picks:
+            st.session_state.game_picks[koers_keuze] = {"extras": [], "dark_horse": None, "kopman": None}
             
-            # Voorkom KeyError door structuur veilig aan te roepen of aan te maken
-            if koers_keuze not in st.session_state.game_picks:
-                st.session_state.game_picks[koers_keuze] = {"extras": [], "joker": None}
-                
-            huidige_kopman = st.session_state.game_picks[koers_keuze].get("joker")
-            opties_kopman = [""] + actieve_team
-            idx_kopman = opties_kopman.index(huidige_kopman) if huidige_kopman in opties_kopman else 0
-            
-            st.markdown("---")
-            gekozen_kopman = st.selectbox("Kies je Kopman (dubbele punten):", options=opties_kopman, index=idx_kopman, key=f"kopman_{koers_keuze}")
-            st.session_state.game_picks[koers_keuze]["joker"] = gekozen_kopman if gekozen_kopman else None
+        huidige_picks = st.session_state.game_picks[koers_keuze]
+        
+        # 1. Drie extra renners
+        st.markdown(f"### 1. Drie Extra Renners voor {koers_keuze}")
+        beschikbare_extras = [r for r in alle_renners if r not in st.session_state.game_base_team]
+        
+        gekozen_extras = st.multiselect(
+            "Kies maximaal 3 extra renners (buiten je basisteam):",
+            options=beschikbare_extras,
+            default=[x for x in huidige_picks.get("extras", []) if x in beschikbare_extras],
+            max_selections=3,
+            key=f"extras_{koers_keuze}"
+        )
+        st.session_state.game_picks[koers_keuze]["extras"] = gekozen_extras
+
+        # 2. Dark Horse (buiten top 50)
+        st.markdown("### 2. Dark Horse")
+        stat_voor_koers = k_map.get(koers_keuze, "AVG")
+        
+        if stat_voor_koers in df.columns:
+            top_50_renners = df.sort_values(by=stat_voor_koers, ascending=False).head(50)['Renner'].tolist()
         else:
-            st.warning("Kies eerst je basis team in het eerste tabblad!")
+            top_50_renners = df.head(50)['Renner'].tolist()
+            
+        buiten_top_50 = [r for r in alle_renners if r not in top_50_renners]
+        opties_dark_horse = [""] + buiten_top_50
+        
+        huidige_dark_horse = huidige_picks.get("dark_horse")
+        idx_dh = opties_dark_horse.index(huidige_dark_horse) if huidige_dark_horse in opties_dark_horse else 0
+        
+        gekozen_dark_horse = st.selectbox(
+            "Kies je renner buiten de top 50 (150 bonuspunten bij een top-10 klassering):",
+            options=opties_dark_horse,
+            index=idx_dh,
+            key=f"dh_{koers_keuze}",
+            help=f"Het systeem gebruikt de '{stat_voor_koers}' statistiek om de top 50 voor deze koers te bepalen."
+        )
+        st.session_state.game_picks[koers_keuze]["dark_horse"] = gekozen_dark_horse if gekozen_dark_horse else None
+        
+        # 3. Kopman
+        st.markdown("### 3. Kopman")
+        actieve_ploeg = st.session_state.game_base_team + gekozen_extras
+        opties_kopman = [""] + actieve_ploeg
+        
+        huidige_kopman = huidige_picks.get("kopman")
+        idx_kopman = opties_kopman.index(huidige_kopman) if huidige_kopman in opties_kopman else 0
+        
+        gekozen_kopman = st.selectbox(
+            "Kies je Kopman (dubbele punten) uit je 13 actieve renners:",
+            options=opties_kopman,
+            index=idx_kopman,
+            key=f"kopman_{koers_keuze}"
+        )
+        st.session_state.game_picks[koers_keuze]["kopman"] = gekozen_kopman if gekozen_kopman else None
+
+        # Overzicht weergeven
+        st.info("💡 **Jouw selectie voor deze koers:**\n" + 
+                f"\n**Basis (10):** {', '.join(st.session_state.game_base_team) if st.session_state.game_base_team else 'Geen'}" +
+                f"\n**Extra (3):** {', '.join(gekozen_extras) if gekozen_extras else 'Geen'}" +
+                f"\n**Dark Horse:** {gekozen_dark_horse if gekozen_dark_horse else 'Geen'}" +
+                f"\n**Kopman:** {gekozen_kopman if gekozen_kopman else 'Geen'}")
