@@ -42,7 +42,8 @@ def load_game_data():
         if 'Naam' in df_p.columns: df_p = df_p.rename(columns={'Naam': 'Renner'})
         if 'Naam' in df_s.columns: df_s = df_s.rename(columns={'Naam': 'Renner'})
         
-        races = ["STR", "NOK", "BKC", "MSR", "RVB", "E3", "IFF", "DDV", "RVV", "SP", "PR", "RVL", "BRP", "AGT", "WAP", "LBL"]
+        # Sporza koersen VANAF de koers NA Strade Bianche (STR = Strade, NOK = Nokere Koerse)
+        races = ["NOK", "BKC", "MSR", "RVB", "E3", "IFF", "DDV", "RVV", "SP", "PR", "RVL", "BRP", "AGT", "WAP", "LBL"]
         available = [r for r in races if r in df_p.columns]
         
         koers_map = {"NOK":"SPR","BKC":"SPR","MSR":"AVG","RVB":"SPR","E3":"COB","IFF":"SPR","DDV":"COB","RVV":"COB","SP":"SPR","PR":"COB","RVL":"SPR","BRP":"HLL","AGT":"HLL","WAP":"HLL","LBL":"HLL"}
@@ -56,7 +57,7 @@ def load_game_data():
                 
         return df, available, koers_map
     except:
-        return pd.DataFrame({'Renner': ['Wout van Aert', 'Mathieu van der Poel', 'Tadej Pogačar']}), ["OML", "KBK", "STR"], {}
+        return pd.DataFrame({'Renner': ['Wout van Aert', 'Mathieu van der Poel', 'Tadej Pogačar']}), ["NOK", "MSR", "RVV"], {}
 
 df, races, k_map = load_game_data()
 alle_renners = sorted(df['Renner'].dropna().unique()) if not df.empty else []
@@ -86,11 +87,43 @@ with st.sidebar:
             st.session_state.game_picks = d.get("picks", {r: {"extras": [], "dark_horse": None, "kopman": None} for r in races})
             st.rerun()
 
-st.write("Kies je 10 vaste renners en vul per koers je 3 extra renners, je dark horse en je kopman aan.")
 st.divider()
 
 # --- INTERFACE COMPONENTEN ---
-tab1, tab2 = st.tabs(["🚴 Basis Team (10)", "🏁 Selecties per Koers"])
+tab0, tab1, tab2 = st.tabs(["📖 Spelregels & Uitleg", "🚴 Basis Team (10)", "🏁 Selecties per Koers"])
+
+# Tab 0: Spelregels
+with tab0:
+    st.header("📖 Spelregels")
+    st.markdown("""
+    Dit is een tactisch wielerspel waarbij je strategisch moet plannen voor de resterende voorjaarsklassiekers (vanaf Nokere Koerse).
+
+    ### 1. Je Selectie
+    * **Basis Team:** Je kiest éénmalig **10 vaste renners**. Deze renners zitten standaard in je team voor álle resterende koersen.
+    * **Extra Renners:** Per koers mag je **3 extra renners** toevoegen aan je dagselectie. Je actieve team per koers bestaat dus altijd uit 13 renners.
+
+    ### 2. Kopman & Dark Horse
+    * **Kopman:** Per koers kies je **1 kopman** uit je 13 actieve renners. De punten van deze renner worden verdubbeld (x2).
+    * **Dark Horse:** Het systeem bepaalt per koers een top 50 van favorieten (op basis van de benodigde specialiteit: sprint, kasseien of heuvels). Je kiest per koers **1 renner van buiten deze top 50**.
+        * Eindigt jouw Dark Horse in de top 10 van de uitslag? Dan scoor je **150 bonuspunten**.
+
+    ### 3. Puntentelling (Top 20)
+    Voor elke renner in je dagselectie van 13 (inclusief je kopman) krijg je punten als ze in de top 20 eindigen:
+    
+    | Positie | Punten | Positie | Punten | Positie | Punten | Positie | Punten |
+    | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+    | **1e** | 100 | **6e** | 40 | **11e** | 20 | **16e** | 10 |
+    | **2e** | 80 | **7e** | 36 | **12e** | 18 | **17e** | 8 |
+    | **3e** | 70 | **8e** | 32 | **13e** | 16 | **18e** | 6 |
+    | **4e** | 60 | **9e** | 28 | **14e** | 14 | **19e** | 4 |
+    | **5e** | 50 | **10e**| 24 | **15e** | 12 | **20e** | 2 |
+    
+    *Let op: Bovenop deze basispunten komen eventuele vermenigvuldigers (kopman x2) en de Dark Horse bonus (+150 bij top 10).*
+    
+    ### 4. Kalender
+    Het spel loopt over de volgende 15 koersen:
+    Nokere Koerse (NOK), Bredene Koksijde (BKC), Milaan-Sanremo (MSR), Classic Brugge-De Panne (RVB), E3 Saxo Classic (E3), Gent-Wevelgem (IFF), Dwars door Vlaanderen (DDV), Ronde van Vlaanderen (RVV), Scheldeprijs (SP), Parijs-Roubaix (PR), Brabantse Pijl (RVL), Amstel Gold Race (BRP), Waalse Pijl (AGT), Luik-Bastenaken-Luik (LBL). *(Opmerking: WAP/AGT mapping kan variëren afhankelijk van je dataset).*
+    """)
 
 # Tab 1: Basis Team Selectie
 with tab1:
