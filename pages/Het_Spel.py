@@ -53,11 +53,9 @@ def load_game_data():
         
         koers_map = {"NOK":"SPR","BKC":"SPR","MSR":"AVG","RVB":"SPR","E3":"COB","IFF":"SPR","DDV":"COB","RVV":"COB","SP":"SPR","PR":"COB","RVL":"SPR","BRP":"HLL","AGT":"HLL","WAP":"HLL","LBL":"HLL"}
         
-        # Simpele merge voor test
         df = pd.merge(df_p, df_s[['Renner', 'COB', 'HLL', 'SPR', 'AVG', 'Team']], on='Renner', how='left')
         return df, available, koers_map
     except:
-        # Fallback als bestanden missen
         return pd.DataFrame({'Renner': ['Wout van Aert', 'Mathieu van der Poel', 'Tadej Pogačar']}), ["OML", "KBK", "STR"], {}
 
 df, races, k_map = load_game_data()
@@ -65,7 +63,13 @@ alle_renners = sorted(df['Renner'].dropna().unique()) if not df.empty else []
 
 # --- STATE ---
 if "game_base_team" not in st.session_state: st.session_state.game_base_team = []
-if "game_transfers" not in st.session_state: st.session_state.game_transfers = [{"uit": None, "in": None, "moment": None} for _ in range(5)]
+if "game_transfers" not in st.session_state: 
+    st.session_state.game_transfers = [{"uit": None, "in": None, "moment": None} for _ in range(5)]
+    
+# Zorg dat de lijst lokaal ALTIJD lengte 5 heeft om IndexErrors te voorkomen
+while len(st.session_state.game_transfers) < 5:
+    st.session_state.game_transfers.append({"uit": None, "in": None, "moment": None})
+
 if "game_picks" not in st.session_state: st.session_state.game_picks = {r: {"extras": [], "joker": None} for r in races}
 
 # --- UI ---
@@ -83,9 +87,15 @@ with st.sidebar:
         res = supabase.table(tabel_naam).select("custom_team").eq("username", speler_naam).execute()
         if res.data:
             d = res.data[0]["custom_team"]["data"]
-            st.session_state.game_base_team = d["base"]
-            st.session_state.game_transfers = d["transfers"]
-            st.session_state.game_picks = d["picks"]
+            st.session_state.game_base_team = d.get("base", [])
+            
+            # Voorkom IndexError bij inladen van lege/te korte lijst uit cloud
+            geladen_transfers = d.get("transfers", [])
+            while len(geladen_transfers) < 5:
+                geladen_transfers.append({"uit": None, "in": None, "moment": None})
+            st.session_state.game_transfers = geladen_transfers
+            
+            st.session_state.game_picks = d.get("picks", {r: {"extras": [], "joker": None} for r in races})
             st.rerun()
 
 st.write("Stel hieronder je team samen, plan je transfers in en kies je kopmannen!")
@@ -105,7 +115,6 @@ with tab1:
         max_selections=20
     )
     
-    # Update state
     st.session_state.game_base_team = geselecteerd
     st.progress(len(geselecteerd) / 20)
     st.write(f"**{len(geselecteerd)} / 20** geselecteerd")
@@ -143,8 +152,6 @@ with tab3:
     koers_keuze = st.selectbox("Kies de koers om je selectie te bekijken:", races)
     
     if koers_keuze:
-        # NB: Dit is een simpele weergave van het basisteam. 
-        # Voor de 'echte' actieve ploeg moet de logica rekening houden met de geselecteerde transfers.
         actieve_team = list(st.session_state.game_base_team) 
         
         if actieve_team:
