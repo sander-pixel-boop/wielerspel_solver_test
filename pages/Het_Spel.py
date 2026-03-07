@@ -33,6 +33,19 @@ def generate_signature(data_dict):
     salt = "GeheimeKlassiekerSleutel2026"
     return hashlib.sha256((data_str + salt).encode('utf-8')).hexdigest()
 
+def is_team_locked():
+    if os.path.exists("uitslagen.csv"):
+        try:
+            df_u = pd.read_csv("uitslagen.csv", sep=None, engine='python')
+            df_u.columns = [str(c).strip().title() for c in df_u.columns]
+            if 'Race' in df_u.columns:
+                verreden = [str(x).strip().upper() for x in df_u['Race'].unique()]
+                if "NOK" in verreden:
+                    return True
+        except:
+            return False
+    return False
+
 # --- DATA LADEN ---
 @st.cache_data
 def load_game_data():
@@ -61,6 +74,7 @@ def load_game_data():
 
 df, races, k_map = load_game_data()
 alle_renners = sorted(df['Renner'].dropna().unique()) if not df.empty else []
+team_locked = is_team_locked()
 
 # --- STATE ---
 if "game_base_team" not in st.session_state: 
@@ -129,16 +143,22 @@ with tab0:
 with tab1:
     st.subheader("Selecteer je Basis Team (Max 10)")
     
-    geselecteerd = st.multiselect(
-        "Kies je 10 vaste renners:", 
-        options=alle_renners, 
-        default=st.session_state.game_base_team,
-        max_selections=10
-    )
-    
-    st.session_state.game_base_team = geselecteerd
-    st.progress(len(geselecteerd) / 10 if len(geselecteerd) <= 10 else 1.0)
-    st.write(f"**{len(geselecteerd)} / 10** geselecteerd")
+    if team_locked:
+        st.warning("🔒 De uitslag van Nokere Koerse (NOK) is verwerkt. Je basisteam is definitief en kan niet meer worden aangepast.")
+        st.write("### Jouw vaste team:")
+        for renner in sorted(st.session_state.game_base_team):
+            st.write(f"- {renner}")
+    else:
+        geselecteerd = st.multiselect(
+            "Kies je 10 vaste renners:", 
+            options=alle_renners, 
+            default=st.session_state.game_base_team,
+            max_selections=10
+        )
+        
+        st.session_state.game_base_team = geselecteerd
+        st.progress(len(geselecteerd) / 10 if len(geselecteerd) <= 10 else 1.0)
+        st.write(f"**{len(geselecteerd)} / 10** geselecteerd")
 
 # Tab 2: Selecties per koers
 with tab2:
