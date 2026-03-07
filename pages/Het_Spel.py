@@ -66,11 +66,11 @@ if "game_base_team" not in st.session_state: st.session_state.game_base_team = [
 if "game_transfers" not in st.session_state: 
     st.session_state.game_transfers = [{"uit": None, "in": None, "moment": None} for _ in range(5)]
     
-# Zorg dat de lijst lokaal ALTIJD lengte 5 heeft om IndexErrors te voorkomen
 while len(st.session_state.game_transfers) < 5:
     st.session_state.game_transfers.append({"uit": None, "in": None, "moment": None})
 
-if "game_picks" not in st.session_state: st.session_state.game_picks = {r: {"extras": [], "joker": None} for r in races}
+if "game_picks" not in st.session_state: 
+    st.session_state.game_picks = {r: {"extras": [], "joker": None} for r in races}
 
 # --- UI ---
 st.title(f"🎮 Custom Spel: {speler_naam.capitalize()}")
@@ -89,7 +89,6 @@ with st.sidebar:
             d = res.data[0]["custom_team"]["data"]
             st.session_state.game_base_team = d.get("base", [])
             
-            # Voorkom IndexError bij inladen van lege/te korte lijst uit cloud
             geladen_transfers = d.get("transfers", [])
             while len(geladen_transfers) < 5:
                 geladen_transfers.append({"uit": None, "in": None, "moment": None})
@@ -148,18 +147,36 @@ with tab2:
 
 # Tab 3: Selecties per koers (Kopmannen)
 with tab3:
-    st.subheader("Kopman Selectie")
+    st.subheader("Kopman Selectie & Actieve Ploeg")
     koers_keuze = st.selectbox("Kies de koers om je selectie te bekijken:", races)
     
     if koers_keuze:
         actieve_team = list(st.session_state.game_base_team) 
+        idx_curr = races.index(koers_keuze) if koers_keuze in races else 0
+        
+        # Bereken de actieve ploeg o.b.v. de transfers
+        for t in st.session_state.game_transfers:
+            if t["uit"] and t["in"] and t["moment"]:
+                if t["moment"] in races:
+                    idx_moment = races.index(t["moment"])
+                    # Als de huidige koers NA het wisselmoment valt, voer transfer door
+                    if idx_curr > idx_moment:
+                        if t["uit"] in actieve_team: actieve_team.remove(t["uit"])
+                        if t["in"] not in actieve_team: actieve_team.append(t["in"])
         
         if actieve_team:
+            st.write("### Je actieve ploeg voor deze koers:")
+            st.write(", ".join(sorted(actieve_team)))
+            
+            # Voorkom KeyError door structuur veilig aan te roepen of aan te maken
+            if koers_keuze not in st.session_state.game_picks:
+                st.session_state.game_picks[koers_keuze] = {"extras": [], "joker": None}
+                
             huidige_kopman = st.session_state.game_picks[koers_keuze].get("joker")
             opties_kopman = [""] + actieve_team
             idx_kopman = opties_kopman.index(huidige_kopman) if huidige_kopman in opties_kopman else 0
             
-            st.write(f"### Selectie voor {koers_keuze}")
+            st.markdown("---")
             gekozen_kopman = st.selectbox("Kies je Kopman (dubbele punten):", options=opties_kopman, index=idx_kopman, key=f"kopman_{koers_keuze}")
             st.session_state.game_picks[koers_keuze]["joker"] = gekozen_kopman if gekozen_kopman else None
         else:
