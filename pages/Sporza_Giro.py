@@ -28,30 +28,52 @@ supabase = init_connection()
 TABEL_NAAM = "gebruikers_data_test"
 DB_KOLOM = "sporza_giro_team26"
 
-# --- ETAPPE DATA ---
+# --- ETAPPE DATA (Standaard wegingen obv profielzwaarte) ---
 GIRO_ETAPPES = [
-    {"id": 1, "date": "08/05", "route": "Nessebar - Burgas", "km": 156, "type": "Vlak ➖"},
-    {"id": 2, "date": "09/05", "route": "Burgas - Valiko Tarnovo", "km": 220, "type": "Berg ⛰️"},
-    {"id": 3, "date": "10/05", "route": "Plovdiv - Sofia", "km": 174, "type": "Heuvel ↗️"},
-    {"id": 4, "date": "12/05", "route": "Catanzaro - Cosenza", "km": 144, "type": "Berg ⛰️"},
-    {"id": 5, "date": "13/05", "route": "Praia a Mare - Potenza", "km": 204, "type": "Heuvel ↗️"},
-    {"id": 6, "date": "14/05", "route": "Paestum - Naples", "km": 161, "type": "Heuvel ↗️"},
-    {"id": 7, "date": "15/05", "route": "Formia - Blockhaus", "km": 246, "type": "Berg ⛰️"},
-    {"id": 8, "date": "16/05", "route": "Chieti - Fermo", "km": 159, "type": "Heuvel ↗️"},
-    {"id": 9, "date": "17/05", "route": "Cervia - Corno alle Scale", "km": 184, "type": "Berg ⛰️"},
-    {"id": 10, "date": "19/05", "route": "Viareggio - Massa", "km": 40.2, "type": "Tijdrit ⏱️"},
-    {"id": 11, "date": "20/05", "route": "Porcari - Chiavari", "km": 178, "type": "Heuvel ↗️"},
-    {"id": 12, "date": "21/05", "route": "Imperia - Novi Ligure", "km": 177, "type": "Heuvel ↗️"},
-    {"id": 13, "date": "22/05", "route": "Alessandria - Verbania", "km": 186, "type": "Heuvel ↗️"},
-    {"id": 14, "date": "23/05", "route": "Aosta - Pila", "km": 133, "type": "Berg ⛰️"},
-    {"id": 15, "date": "24/05", "route": "Voghera - Milan", "km": 136, "type": "Vlak ➖"},
-    {"id": 16, "date": "26/05", "route": "Bellinzona - Carì", "km": 113, "type": "Berg ⛰️"},
-    {"id": 17, "date": "27/05", "route": "Cassano d'Adda - Andalo", "km": 200, "type": "Heuvel ↗️"},
-    {"id": 18, "date": "28/05", "route": "Fai della Paganella - Pieve di Soligo", "km": 167, "type": "Heuvel ↗️"},
-    {"id": 19, "date": "29/05", "route": "Feltre - Alleghe", "km": 151, "type": "Berg ⛰️"},
-    {"id": 20, "date": "30/05", "route": "Gemona del Friuli 1976-2026 - Piancavallo", "km": 199, "type": "Berg ⛰️"},
-    {"id": 21, "date": "31/05", "route": "Rome - Rome", "km": 131, "type": "Vlak ➖"},
+    {"id": 1, "date": "08/05", "route": "Nessebar - Burgas", "km": 156, "type": "Vlak ➖", "w": {"SPR": 1.0, "GC": 0.0, "ITT": 0.0, "MTN": 0.0}},
+    {"id": 2, "date": "09/05", "route": "Burgas - Valiko Tarnovo", "km": 220, "type": "Heuvel ↗️", "w": {"SPR": 0.3, "GC": 0.3, "ITT": 0.0, "MTN": 0.4}},
+    {"id": 3, "date": "10/05", "route": "Plovdiv - Sofia", "km": 174, "type": "Vlak/Heuvel", "w": {"SPR": 0.9, "GC": 0.0, "ITT": 0.0, "MTN": 0.1}},
+    {"id": 4, "date": "12/05", "route": "Catanzaro - Cosenza", "km": 144, "type": "Vlak/Heuvel", "w": {"SPR": 0.6, "GC": 0.0, "ITT": 0.0, "MTN": 0.4}},
+    {"id": 5, "date": "13/05", "route": "Praia a Mare - Potenza", "km": 204, "type": "Heuvel ↗️", "w": {"SPR": 0.1, "GC": 0.6, "ITT": 0.0, "MTN": 0.3}},
+    {"id": 6, "date": "14/05", "route": "Paestum - Naples", "km": 161, "type": "Heuvel ↗️", "w": {"SPR": 0.8, "GC": 0.0, "ITT": 0.0, "MTN": 0.2}},
+    {"id": 7, "date": "15/05", "route": "Formia - Blockhaus", "km": 246, "type": "Berg ⛰️", "w": {"SPR": 0.0, "GC": 0.9, "ITT": 0.0, "MTN": 0.1}},
+    {"id": 8, "date": "16/05", "route": "Chieti - Fermo", "km": 159, "type": "Heuvel ↗️", "w": {"SPR": 0.2, "GC": 0.4, "ITT": 0.0, "MTN": 0.4}},
+    {"id": 9, "date": "17/05", "route": "Cervia - Corno alle Scale", "km": 184, "type": "Berg ⛰️", "w": {"SPR": 0.0, "GC": 0.8, "ITT": 0.0, "MTN": 0.2}},
+    {"id": 10, "date": "19/05", "route": "Viareggio - Massa", "km": 40.2, "type": "Tijdrit ⏱️", "w": {"SPR": 0.0, "GC": 0.0, "ITT": 1.0, "MTN": 0.0}},
+    {"id": 11, "date": "20/05", "route": "Porcari - Chiavari", "km": 178, "type": "Heuvel ↗️", "w": {"SPR": 0.2, "GC": 0.4, "ITT": 0.0, "MTN": 0.4}},
+    {"id": 12, "date": "21/05", "route": "Imperia - Novi Ligure", "km": 177, "type": "Vlak ➖", "w": {"SPR": 0.6, "GC": 0.0, "ITT": 0.0, "MTN": 0.4}},
+    {"id": 13, "date": "22/05", "route": "Alessandria - Verbania", "km": 186, "type": "Heuvel ↗️", "w": {"SPR": 0.6, "GC": 0.0, "ITT": 0.0, "MTN": 0.4}},
+    {"id": 14, "date": "23/05", "route": "Aosta - Pila", "km": 133, "type": "Berg ⛰️", "w": {"SPR": 0.0, "GC": 0.9, "ITT": 0.0, "MTN": 0.1}},
+    {"id": 15, "date": "24/05", "route": "Voghera - Milan", "km": 136, "type": "Vlak ➖", "w": {"SPR": 1.0, "GC": 0.0, "ITT": 0.0, "MTN": 0.0}},
+    {"id": 16, "date": "26/05", "route": "Bellinzona - Carì", "km": 113, "type": "Berg ⛰️", "w": {"SPR": 0.0, "GC": 0.9, "ITT": 0.0, "MTN": 0.1}},
+    {"id": 17, "date": "27/05", "route": "Cassano d'Adda - Andalo", "km": 200, "type": "Heuvel ↗️", "w": {"SPR": 0.1, "GC": 0.5, "ITT": 0.0, "MTN": 0.4}},
+    {"id": 18, "date": "28/05", "route": "Fai della Paganella - Pieve di Soligo", "km": 167, "type": "Heuvel ↗️", "w": {"SPR": 0.3, "GC": 0.2, "ITT": 0.0, "MTN": 0.5}},
+    {"id": 19, "date": "29/05", "route": "Feltre - Alleghe", "km": 151, "type": "Berg ⛰️", "w": {"SPR": 0.0, "GC": 0.9, "ITT": 0.0, "MTN": 0.1}},
+    {"id": 20, "date": "30/05", "route": "Gemona del Friuli - Piancavallo", "km": 199, "type": "Berg ⛰️", "w": {"SPR": 0.0, "GC": 0.9, "ITT": 0.0, "MTN": 0.1}},
+    {"id": 21, "date": "31/05", "route": "Rome - Rome", "km": 131, "type": "Vlak ➖", "w": {"SPR": 1.0, "GC": 0.0, "ITT": 0.0, "MTN": 0.0}},
 ]
+
+def laad_profiel_scores():
+    bestand = "giro262/profile_score.csv"
+    if os.path.exists(bestand):
+        try:
+            df_scores = pd.read_csv(bestand, sep=None, engine='python')
+            df_scores.columns = df_scores.columns.str.strip()
+            for _, row in df_scores.iterrows():
+                try:
+                    s_id = int(row['id'])
+                    for e in GIRO_ETAPPES:
+                        if e['id'] == s_id:
+                            if 'SPR' in df_scores.columns: e['w']['SPR'] = float(row['SPR'])
+                            if 'GC' in df_scores.columns: e['w']['GC'] = float(row['GC'])
+                            if 'ITT' in df_scores.columns: e['w']['ITT'] = float(row['ITT'])
+                            if 'MTN' in df_scores.columns: e['w']['MTN'] = float(row['MTN'])
+                except:
+                    continue
+        except Exception as err:
+            st.warning(f"Fout bij inladen profile_score.csv: {err}")
+
+laad_profiel_scores()
 
 # --- HULPFUNCTIES ---
 def normalize_name_logic(text):
@@ -104,14 +126,20 @@ def genereer_ai_etappe_voorspellingen(df, etappes, top_x):
     ai_voorspellingen = {}
     for etappe in etappes:
         df_temp = df.copy()
-        stype = etappe["type"]
-        if "Vlak" in stype: df_temp['stage_score'] = df_temp['SPR']
-        elif "Tijdrit" in stype: df_temp['stage_score'] = df_temp['ITT']
-        elif "Berg" in stype: df_temp['stage_score'] = (df_temp['GC'] * 0.7) + (df_temp['MTN'] * 0.3)
-        elif "Heuvel" in stype: df_temp['stage_score'] = (df_temp['SPR'] * 0.4) + (df_temp['MTN'] * 0.4) + (df_temp['GC'] * 0.2)
-        else: df_temp['stage_score'] = df_temp['Giro_EV']
+        w = etappe["w"]
+        
+        df_temp['stage_score'] = (
+            (df_temp['SPR'] * w['SPR']) + 
+            (df_temp['GC'] * w['GC']) + 
+            (df_temp['ITT'] * w['ITT']) + 
+            (df_temp['MTN'] * w['MTN'])
+        )
+        
         top_renners = df_temp.sort_values(by=['stage_score', 'Giro_EV'], ascending=[False, False])['Renner'].head(top_x).tolist()
-        while len(top_renners) < 10: top_renners.append(None)
+        
+        while len(top_renners) < 10: 
+            top_renners.append(None)
+            
         ai_voorspellingen[str(etappe["id"])] = top_renners
     return ai_voorspellingen
 
@@ -270,7 +298,11 @@ with tab2:
     renners_opties = ["-"] + sorted(df['Renner'].tolist())
     for etappe in GIRO_ETAPPES:
         stage_id = str(etappe["id"])
-        with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']})"):
+        
+        w = etappe["w"]
+        weight_str = f"SPR:{int(w['SPR']*100)}% GC:{int(w['GC']*100)}% ITT:{int(w['ITT']*100)}% MTN:{int(w['MTN']*100)}%"
+        
+        with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']}) | 🤖 {weight_str}"):
             
             giro_link = "https://www.giroditalia.it/en/the-route/"
             map_path = f"giro262/giro26-{etappe['id']}-map.jpg"
