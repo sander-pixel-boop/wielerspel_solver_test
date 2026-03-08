@@ -28,7 +28,7 @@ def init_connection():
     return create_client(url, key)
 
 supabase = init_connection()
-TABEL_NAAM = st.secrets["TABEL_NAAM"]
+TABEL_NAAM = "gebruikers_data_test"
 
 # --- HULPFUNCTIES ---
 def normalize_name_logic(text):
@@ -379,26 +379,29 @@ with st.sidebar:
     st.header(f"👤 Profiel: {speler_naam.capitalize()}")
     
     st.write("☁️ **Cloud Database**")
-    c_cloud1, c_cloud2 = st.columns(2)
-    with c_cloud1:
-        if st.button("💾 Opslaan", type="primary", use_container_width=True):
-            try:
-                team_data = {"selected_riders": st.session_state.selected_riders, "transfer_plan": st.session_state.transfer_plan, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
-                supabase.table(TABEL_NAAM).upsert({"username": speler_naam, "scorito_team": team_data}, on_conflict="username").execute()
-                st.success("Cloud-backup geslaagd!")
-            except Exception as e: st.error(f"Fout: {e}")
-    with c_cloud2:
-        if st.button("🔄 Inladen", use_container_width=True):
-            try:
-                res = supabase.table(TABEL_NAAM).select("scorito_team").eq("username", speler_naam).execute()
-                if res.data and res.data[0]['scorito_team']:
-                    d = res.data[0]['scorito_team']
-                    st.session_state.selected_riders = d.get("selected_riders", [])
-                    st.session_state.transfer_plan = d.get("transfer_plan", [])
-                    st.success(f"Team geladen (van {d.get('ts', '?')})")
-                    st.rerun()
-                else: st.warning("Geen team gevonden.")
-            except Exception as e: st.error(f"Fout: {e}")
+    if speler_naam != "gast":
+        c_cloud1, c_cloud2 = st.columns(2)
+        with c_cloud1:
+            if st.button("💾 Opslaan", type="primary", use_container_width=True):
+                try:
+                    team_data = {"selected_riders": st.session_state.selected_riders, "transfer_plan": st.session_state.transfer_plan, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
+                    supabase.table(TABEL_NAAM).update({"scorito_team": team_data}).eq("username", speler_naam).execute()
+                    st.success("Cloud-backup geslaagd!")
+                except Exception as e: st.error(f"Fout: {e}")
+        with c_cloud2:
+            if st.button("🔄 Inladen", use_container_width=True):
+                try:
+                    res = supabase.table(TABEL_NAAM).select("scorito_team").eq("username", speler_naam).execute()
+                    if res.data and res.data[0].get('scorito_team'):
+                        d = res.data[0]['scorito_team']
+                        st.session_state.selected_riders = d.get("selected_riders", [])
+                        st.session_state.transfer_plan = d.get("transfer_plan", [])
+                        st.success(f"Team geladen (van {d.get('ts', '?')})")
+                        st.rerun()
+                    else: st.warning("Geen team gevonden in de cloud.")
+                except Exception as e: st.error(f"Fout: {e}")
+    else:
+        st.info("Log in met een account om cloud-opslag te gebruiken.")
 
     st.divider()
     st.write("📁 **Lokale Backup (.json)**")
