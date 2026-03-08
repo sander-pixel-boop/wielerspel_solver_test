@@ -38,26 +38,71 @@ def normalize_name_logic(text):
     nfkd_form = unicodedata.normalize('NFKD', text)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
-def match_naam_slim(naam, dictionary_met_namen):
+def match_naam_slim(naam, dict_met_namen):
     """
-    Gebruikt een coulante match om niemand kwijt te raken, maar activeert een 
-    strenge tie-breaker als er meerdere renners met dezelfde naam (broers/naamgenoten) zijn.
+    Koppelt namen coulant om lege databases te voorkomen, maar gebruikt een 
+    lengte-tie-breaker en hardcoded dict om broers/naamgenoten te scheiden.
     """
     naam_norm = normalize_name_logic(naam)
-    if naam_norm in dictionary_met_namen:
-        return dictionary_met_namen[naam_norm]
+    lijst_met_namen = list(dict_met_namen.keys())
+    
+    # 1. Bekende Probleemgevallen (Handmatige Override)
+    bekende_gevallen = {
+        "philipsen": "jasper philipsen",
+        "pedersen": "mads pedersen",
+        "pidcock": "thomas pidcock",
+        "tom pidcock": "thomas pidcock",
+        "van aert": "wout van aert",
+        "van der poel": "mathieu van der poel",
+        "pogacar": "tadej pogacar",
+        "de lie": "arnaud de lie"
+    }
+    
+    # Als input = "Philipsen" of "J. Philipsen"
+    for fout, correct in bekende_gevallen.items():
+        if naam_norm == fout or naam_norm.endswith(f" {fout}") or naam_norm.endswith(f". {fout}"):
+            for target in lijst_met_namen:
+                if correct in target:
+                    return dict_met_namen[target]
+                    
+    # 2. Exacte match
+    if naam_norm in lijst_met_namen:
+        return dict_met_namen[naam_norm]
         
-    bests = process.extractBests(naam_norm, list(dictionary_met_namen.keys()), scorer=fuzz.token_set_ratio, limit=4)
-    if bests and bests[0][1] > 75:
+    # 3. Fuzzy Match met de slimme Tie-Breaker
+    bests = process.extractBests(naam_norm, lijst_met_namen, scorer=fuzz.token_set_ratio, limit=5)
+    if bests and bests[0][1] >= 75:
         top_score = bests[0][1]
-        # Pak alle matches die vrijwel dezelfde top-score hebben
-        close_matches = [b[0] for b in bests if b[1] >= top_score - 2]
+        # Pak alle namen met een topscore
+        candidates = [b[0] for b in bests if b[1] >= top_score - 3]
         
-        # Tie-breaker: Sorteer op de exacte string overeenkomst (token_sort_ratio).
-        # Dit straft extra namen af. (Dus "Jasper Philipsen" verslaat "Albert Withen Philipsen").
-        close_matches.sort(key=lambda x: fuzz.token_sort_ratio(naam_norm, x), reverse=True)
-        return dictionary_met_namen[close_matches[0]]
+        # TIE-BREAKER: Kijk wie qua lengte het dichtste bij het origineel ligt.
+        # "Philipsen" lijkt qua lengte meer op "Jasper Philipsen" dan "Albert Withen Philipsen".
+        candidates.sort(key=lambda x: (abs(len(x) - len(naam_norm)), -fuzz.ratio(naam_norm, x)))
+        return dict_met_namen[candidates[0]]
         
+    return naam
+
+def match_uitslag_naam(naam, alle_renners):
+    """Dezelfde slimme logica, maar specifiek voor de uitslagen.csv array"""
+    naam_norm = normalize_name_logic(naam)
+    bekende_gevallen = {
+        "philipsen": "jasper philipsen", "pedersen": "mads pedersen", "pidcock": "thomas pidcock",
+        "tom pidcock": "thomas pidcock", "van aert": "wout van aert", "van der poel": "mathieu van der poel",
+        "pogacar": "tadej pogacar", "de lie": "arnaud de lie"
+    }
+    for fout, correct in bekende_gevallen.items():
+        if naam_norm == fout or naam_norm.endswith(f" {fout}") or naam_norm.endswith(f". {fout}"):
+            for target in alle_renners:
+                if correct in normalize_name_logic(target):
+                    return target
+                    
+    bests = process.extractBests(naam_norm, alle_renners, scorer=fuzz.token_set_ratio, limit=5)
+    if bests and bests[0][1] >= 75:
+        top_score = bests[0][1]
+        candidates = [b[0] for b in bests if b[1] >= top_score - 3]
+        candidates.sort(key=lambda x: (abs(len(normalize_name_logic(x)) - len(naam_norm)), -fuzz.ratio(naam_norm, normalize_name_logic(x))))
+        return candidates[0]
     return naam
 
 def get_file_mod_time(filepath):
@@ -103,19 +148,13 @@ def get_uitslagen(file_mod_time, alle_renners):
                 continue
             
             rider_name = str(row['Rider']).strip()
+            gekoppelde_naam = match_uitslag_naam(rider_name, alle_renners)
             
-            # Gebruik dezelfde Tie-Breaker logica voor uitslagen
-            bests = process.extractBests(rider_name, alle_renners, scorer=fuzz.token_set_ratio, limit=4)
-            if bests and bests[0][1] > 70:
-                top_score = bests[0][1]
-                close_matches = [b[0] for b in bests if b[1] >= top_score - 2]
-                close_matches.sort(key=lambda x: fuzz.token_sort_ratio(rider_name, x), reverse=True)
-                
-                uitslag_parsed.append({
-                    "Race": koers,
-                    "Rnk": rank_str,
-                    "Renner": close_matches[0]
-                })
+            uitslag_parsed.append({
+                "Race": koers,
+                "Rnk": rank_str,
+                "Renner": gekoppelde_naam
+            })
         return pd.DataFrame(uitslag_parsed)
     except:
         return pd.DataFrame()
@@ -187,16 +226,6 @@ def load_and_merge_data(prog_mod_time, scorito_mod_time, stats_mod_time):
         sporza_to_scorito = {'OML': 'OHN', 'STR': 'SB', 'RVB': 'BDP', 'IFF': 'GW', 'BRP': 'BP', 'AGT': 'AGR', 'WAP': 'WP'}
         df_prog = df_prog.rename(columns=sporza_to_scorito)
         
-        # Hardcoded overrides voor het geval er alleen 'Philipsen' in de lijst staat
-        manual_overrides = {
-            "Poel": "Mathieu van der Poel", "Aert": "Wout van Aert", "Lie": "Arnaud De Lie",
-            "Gils": "Maxim Van Gils", "Broek": "Frank van den Broek",
-            "Magnier": "Paul Magnier", "Pogacar": "Tadej Pogačar", "Skujins": "Toms Skujiņš",
-            "Kooij": "Olav Kooij", "Philipsen": "Jasper Philipsen", "Pedersen": "Mads Pedersen",
-            "Pidcock": "Thomas Pidcock"
-        }
-        df_prog['Renner'] = df_prog['Renner'].replace(manual_overrides)
-        
         df_scorito = pd.read_csv("bron_startlijsten.csv", sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
         df_scorito.columns = df_scorito.columns.str.strip()
         if 'Naam' in df_scorito.columns: df_scorito = df_scorito.rename(columns={'Naam': 'Renner'})
@@ -220,6 +249,7 @@ def load_and_merge_data(prog_mod_time, scorito_mod_time, stats_mod_time):
         norm_to_scorito = {normalize_name_logic(n): n for n in scorito_names}
         norm_to_stats = {normalize_name_logic(n): n for n in stats_names}
 
+        # Toepassen van de nieuwe slimme matcher
         df_prog['Renner_Scorito'] = df_prog['Renner'].apply(lambda x: match_naam_slim(x, norm_to_scorito))
         df_prog['Renner_Stats'] = df_prog['Renner'].apply(lambda x: match_naam_slim(x, norm_to_stats))
                 
@@ -228,7 +258,7 @@ def load_and_merge_data(prog_mod_time, scorito_mod_time, stats_mod_time):
         merged_df = merged_df.drop(columns=[c for c in merged_df.columns if '_drop' in c or 'Renner_' in c])
         merged_df['Prijs'] = pd.to_numeric(merged_df['Prijs'], errors='coerce').fillna(0).astype(int)
         
-        # Gooi enkel renners weg die geen prijs hebben om de database vol te houden
+        # Gooi renners zonder prijs weg en drop duplicaten
         merged_df = merged_df[merged_df['Prijs'] > 0].sort_values(by='Prijs', ascending=False).drop_duplicates(subset=['Renner'])
         
         ALLE_KOERSEN = ['OHN', 'KBK', 'SB', 'PN', 'TA', 'MSR', 'BDP', 'E3', 'GW', 'DDV', 'RVV', 'SP', 'PR', 'BP', 'AGR', 'WP', 'LBL']
@@ -452,15 +482,7 @@ with st.sidebar:
             
             huidige_renners = df_raw['Renner'].tolist()
             def update_naam(naam):
-                if naam in huidige_renners: return naam
-                # Bij het inladen ook de slimme matcher gebruiken
-                bests = process.extractBests(naam, huidige_renners, scorer=fuzz.token_set_ratio, limit=4)
-                if bests and bests[0][1] > 75:
-                    top_score = bests[0][1]
-                    close_matches = [b[0] for b in bests if b[1] >= top_score - 2]
-                    close_matches.sort(key=lambda x: fuzz.token_sort_ratio(naam, x), reverse=True)
-                    return close_matches[0]
-                return naam
+                return match_uitslag_naam(naam, huidige_renners) # Gebruik dezelfde robuuste logic voor inladen
 
             st.session_state.selected_riders = [update_naam(r) for r in oude_selectie if update_naam(r) in huidige_renners]
             
