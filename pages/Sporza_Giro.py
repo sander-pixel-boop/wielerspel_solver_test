@@ -243,6 +243,9 @@ def solve_giro_team(df, max_bud, max_ren, max_per_team, force_base, ban_base, ev
     return []
 
 # --- HOOFDCODE ---
+st.title("🇮🇹 Grote Ronde: Sporza Giromanager")
+st.markdown("*Data en Statistieken van [Wielerorakel](https://wielerorakel.nl/)*")
+
 df_raw = load_giro_data()
 if df_raw.empty: st.stop()
 
@@ -280,7 +283,8 @@ with st.sidebar:
     
     st.divider()
     bouw_methode = st.radio("Samenstel methode:", ["1. Volledig AI (Stats)", "2. Mijn Voorspellingen (+ AI opvulling)"])
-    top_x_voorspellingen = st.number_input("Top X per etappe", 1, 10, 5)
+    # Standaard Top X is nu 3
+    top_x_voorspellingen = st.number_input("Top X per etappe", 1, 10, 3)
     max_budget = st.number_input("Budget (Miljoen)", value=100.0)
     max_renners = st.number_input("Aantal Renners", value=16)
     max_per_ploeg = st.number_input("Max per ploeg", value=3)
@@ -298,7 +302,6 @@ with st.sidebar:
         res = solve_giro_team(df, max_budget, max_renners, max_per_ploeg, force_base, ban_base, ev_col)
         if res: st.session_state.giro_selected_riders = res; st.rerun()
 
-st.title("🇮🇹 Grote Ronde: Sporza Giromanager")
 tab1, tab2, tab3, tab4 = st.tabs(["🚀 Jouw Selectie", "📅 Etappe Voorspellingen", "📋 Database (Giro)", "ℹ️ Uitleg"])
 
 with tab1:
@@ -340,7 +343,7 @@ with tab2:
             i2.markdown(get_clickable_image_html(prof_path, f"Profiel+Etappe+{etappe['id']}", giro_link), unsafe_allow_html=True)
             
             st.divider()
-            st.markdown("##### ⚙️ Etappe weging aanpassen")
+            # Titel "⚙️ Etappe weging aanpassen" is hier verwijderd
             wc1, wc2, wc3, wc4 = st.columns(4)
             new_spr = wc1.number_input("Sprint (SPR)", 0.0, 1.0, cw["SPR"], 0.1, key=f"wspr_{stage_id}")
             new_gc  = wc2.number_input("Klassement (GC)", 0.0, 1.0, cw["GC"], 0.1, key=f"wgc_{stage_id}")
