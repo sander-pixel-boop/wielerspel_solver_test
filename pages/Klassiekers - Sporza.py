@@ -5,9 +5,27 @@ import json
 import unicodedata
 import os
 from thefuzz import process, fuzz
+from supabase import create_client
+from datetime import datetime
 
 # --- CONFIGURATIE ---
 st.set_page_config(page_title="Sporza Klassiekers AI", layout="wide", page_icon="🚴")
+
+# --- CHECK INLOG & DATABASE SETUP ---
+if "ingelogde_speler" not in st.session_state:
+    st.warning("⚠️ Je bent niet ingelogd. Ga terug naar de Home pagina om in te loggen.")
+    st.stop()
+
+speler_naam = st.session_state["ingelogde_speler"]
+
+@st.cache_resource
+def init_connection():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_connection()
+TABEL_NAAM = "gebruikers_data_test"
 
 # --- HULPFUNCTIES ---
 def normalize_name_logic(text):
@@ -281,6 +299,59 @@ if "sporza_transfer_plan" not in st.session_state: st.session_state.sporza_trans
 
 with st.sidebar:
     st.title("🚴 Sporza AI Coach")
+    st.header(f"👤 Profiel: {speler_naam.capitalize()}")
+    
+    st.write("☁️ **Cloud Database**")
+    if speler_naam != "gast":
+        c_cloud1, c_cloud2 = st.columns(2)
+        with c_cloud1:
+            if st.button("💾 Opslaan", type="primary", use_container_width=True, key="sporza_opslaan"):
+                try:
+                    team_data = {
+                        "selected_riders": st.session_state.sporza_selected_riders, 
+                        "transfer_plan": st.session_state.sporza_transfer_plan, 
+                        "ts": datetime.now().strftime("%Y-%m-%d %H:%M")
+                    }
+                    supabase.table(TABEL_NAAM).update({"sporza_team": team_data}).eq("username", speler_naam).execute()
+                    st.success("Cloud-backup geslaagd!")
+                except Exception as e: 
+                    st.error(f"Fout: {e}")
+        with c_cloud2:
+            if st.button("🔄 Inladen", use_container_width=True, key="sporza_inladen"):
+                try:
+                    res = supabase.table(TABEL_NAAM).select("sporza_team").eq("username", speler_naam).execute()
+                    if res.data and res.data[0].get('sporza_team'):
+                        d = res.data[0]['sporza_team']
+                        st.session_state.sporza_selected_riders = d.get("selected_riders", [])
+                        st.session_state.sporza_transfer_plan = d.get("transfer_plan", [])
+                        st.success(f"Team geladen (van {d.get('ts', '?')})")
+                        st.rerun()
+                    else: 
+                        st.warning("Geen team gevonden in de cloud.")
+                except Exception as e: 
+                    st.error(f"Fout: {e}")
+    else:
+        st.info("Log in met een account om cloud-opslag te gebruiken.")
+
+    st.divider()
+    st.write("📁 **Lokale Backup (.json)**")
+    
+    save_data = {"selected_riders": st.session_state.sporza_selected_riders, "transfer_plan": st.session_state.sporza_transfer_plan}
+    st.download_button("📥 Download Team als .JSON", data=json.dumps(save_data), file_name=f"{speler_naam}_sporza_team.json", mime="application/json", use_container_width=True)
+    
+    uploaded_file = st.file_uploader("📂 Upload Team (.json)", type="json")
+    if uploaded_file is not None and st.button("Laad .json in", use_container_width=True):
+        try:
+            ld = json.load(uploaded_file)
+            st.session_state.sporza_selected_riders = ld.get("selected_riders", [])
+            st.session_state.sporza_transfer_plan = ld.get("transfer_plan", [])
+            st.success("✅ Lokaal bestand geladen!")
+            st.rerun()
+        except Exception as e:
+            st.error("Fout bij inladen.")
+            
+    st.divider()
+    
     ev_method = st.selectbox("🧮 Rekenmodel (EV)", ["1. Sporza Ranking (Dynamisch)", "2. Originele Curve (Macht 4)"])
     toon_uitslagen = st.checkbox("🏁 Koersen zijn begonnen (Toon uitslagen in Matrix)", value=False)
     
@@ -323,19 +394,6 @@ with st.sidebar:
                 st.rerun()
             else:
                 st.error("Geen geldige combinatie mogelijk binnen budget (120M) en ploegrestricties (Max 4 per ploeg).")
-
-    st.divider()
-    with st.expander("📂 Oude Teams Inladen", expanded=False):
-        uploaded_file = st.file_uploader("Upload een JSON backup:", type="json")
-        if uploaded_file is not None:
-            if st.button("Laad Backup in", use_container_width=True):
-                try:
-                    ld = json.load(uploaded_file)
-                    st.session_state.sporza_selected_riders = ld.get("selected_riders", [])
-                    st.session_state.sporza_transfer_plan = ld.get("transfer_plan", [])
-                    st.rerun()
-                except Exception as e:
-                    st.error("Fout bij inladen.")
 
 st.title("🚴 Voorjaarsklassiekers: Sporza Wielermanager")
 st.markdown("**Met dank aan:** [Wielerorakel.nl](https://www.cyclingoracle.com/)")
@@ -460,12 +518,6 @@ else:
                                     st.error("Wissel geweigerd! Budget (120M) overschreden of de 4-renners-per-ploeg limiet is gebroken.")
                         else:
                             st.error(f"Selecteer exact {len(to_replace)} vervanger(s). Je hebt er nu {len(to_add)} gekozen.")
-
-        st.divider()
-        c_dl1, c_dl2 = st.columns(2)
-        with c_dl1:
-            save_data = {"selected_riders": st.session_state.sporza_selected_riders, "transfer_plan": st.session_state.sporza_transfer_plan}
-            st.download_button("📥 Download Team als .JSON (Backup)", data=json.dumps(save_data), file_name="sporza_team.json", mime="application/json", use_container_width=True)
 
     with tab2:
         st.header("🗓️ Startlijst & Uitslagen")
@@ -611,7 +663,7 @@ with tab5:
     * **Transfer 4:** Kost 1 Miljoen (Totaalbudget zakt naar 119 Miljoen)
     * **Transfer 5:** Kost nog eens 2 Miljoen extra (Totaalbudget zakt naar 117 Miljoen)
     
-    De AI berekent tegelijkertijd je start-team én al je geplande wissels in de toekomst. Hij weegt af of het rendabel is om budget in te leveren voor een extra transfer, en zorgt dat je na *elke* wissel altijd een geldig team overhoudt.
+    De AI berekent tegelijkertijd je start-team én al je geplande wissels in de toekomst. Hij weegt af of het rendabel is om budget in leveren voor een extra transfer, en zorgt dat je na *elke* wissel altijd een geldig team overhoudt.
 
     ---
 
@@ -629,6 +681,6 @@ with tab5:
     ---
 
     ### 💾 6. Back-ups & Data Exporteren (Inladen en Opslaan)
-    * **Opslaan (Back-up maken):** Onderaan Tab 1 vind je 'Exporteer Team'. Download je bestand als `.json`. Dit bevat de exacte 20 renners én je wisselmomenten.
-    * **Inladen (Team terughalen):** Ga in de linker zijbalk naar **📂 Oude Teams Inladen**. Upload je `.json` bestand. Het script controleert automatisch via *Fuzzy Matching* of oude namen nog correct in de database staan.
+    * **Opslaan (Back-up maken):** Sla je team op in de cloud via de knop linksboven in de zijbalk, of download lokaal via '.JSON'. 
+    * **Inladen (Team terughalen):** Laad je team in via de cloud-knop of upload een `.json` bestand. Het script controleert automatisch via *Fuzzy Matching* of oude namen nog correct in de database staan.
     """)
