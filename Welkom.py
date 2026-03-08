@@ -84,7 +84,8 @@ scorito_giro = st.Page("pages/Scorito_Grand_Tour.py", title="Giro d'Italia", ico
 # Sporza pagina's
 sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="Klassiekers", icon="🏁")
 sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="Evaluator", icon="📊")
-sporza_giro = st.Page("pages/Sporza_Grand_Tour.py", title="Giro d'Italia", icon="🇮🇹")
+# LET OP: Het Giro bestand moet exact 'Sporza_Giro.py' heten in je map 'pages'!
+sporza_giro = st.Page("pages/Sporza_Giro.py", title="Giro d'Italia", icon="🇮🇹")
 
 eigen_spel = st.Page("pages/Het_Spel.py", title="Custom Klassiekers Spel", icon="🎮")
 
