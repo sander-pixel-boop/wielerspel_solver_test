@@ -4,7 +4,6 @@ from supabase import create_client
 
 st.set_page_config(page_title="Wieler Spellen Solver", page_icon="🚴‍♂️")
 
-# Bron: Supabase Python SDK documentatie
 @st.cache_resource
 def init_connection():
     url = st.secrets["SUPABASE_URL"]
@@ -15,7 +14,6 @@ supabase = init_connection()
 TABEL_NAAM = "gebruikers_data_test"
 
 def hash_wachtwoord(wachtwoord):
-    # Bron: Python hashlib bibliotheek voor veilige SHA-256 encryptie
     return hashlib.sha256(wachtwoord.encode()).hexdigest()
 
 # --- INLOGSCHERM ---
@@ -62,7 +60,7 @@ if "ingelogde_speler" not in st.session_state:
         st.session_state["ingelogde_speler"] = "gast"
         st.rerun()
         
-    st.stop() # Stop de code hier als er niet is ingelogd
+    st.stop()
 
 # --- WELKOMSCHERM (Alleen zichtbaar na inlog) ---
 st.write(f"# Welkom, {st.session_state['ingelogde_speler'].capitalize()}! 🚴‍♂️")
@@ -92,10 +90,8 @@ st.markdown(
 )
 
 # --- PAGINA NAVIGATIE ---
-# Bron: Streamlit documentatie (st.navigation)
-# Pas de locaties aan naar de exacte bestanden in jouw /pages map
-scorito_page = st.Page("pages/Scorito.py", title="Scorito Klassiekers", icon="🏆")
-sporza_page = st.Page("pages/Sporza.py", title="Sporza Wielermanager", icon="🚧")
+scorito_page = st.Page("pages/Klassiekers - Scorito.py", title="Scorito Klassiekers", icon="🏆")
+sporza_page = st.Page("pages/Klassiekers - Sporza.py", title="Sporza Wielermanager", icon="🚧")
 custom_page = st.Page("pages/Het_Spel.py", title="Custom Spel", icon="🎮")
 
 pg = st.navigation([scorito_page, sporza_page, custom_page])
