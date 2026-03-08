@@ -1,0 +1,302 @@
+import streamlit as st
+import pandas as pd
+import pulp
+import json
+import unicodedata
+import os
+from thefuzz import process, fuzz
+from supabase import create_client
+from datetime import datetime
+
+# --- CONFIGURATIE ---
+st.set_page_config(page_title="Sporza Giro AI", layout="wide", page_icon="🇮🇹")
+
+if "ingelogde_speler" not in st.session_state:
+    st.warning("⚠️ Je bent niet ingelogd. Ga terug naar de Home pagina om in te loggen.")
+    st.stop()
+
+speler_naam = st.session_state["ingelogde_speler"]
+
+@st.cache_resource
+def init_connection():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_connection()
+TABEL_NAAM = "gebruikers_data_test"
+DB_KOLOM = "sporza_giro_team26"
+
+# --- HULPFUNCTIES ---
+def normalize_name_logic(text):
+    if not isinstance(text, str): return ""
+    text = text.lower().strip()
+    nfkd_form = unicodedata.normalize('NFKD', text)
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+
+def match_naam_slim(naam, dict_met_namen):
+    naam_norm = normalize_name_logic(naam)
+    lijst_met_namen = list(dict_met_namen.keys())
+    
+    bekende_gevallen = {
+        "philipsen": "jasper philipsen", "j. philipsen": "jasper philipsen", "j philipsen": "jasper philipsen",
+        "pedersen": "mads pedersen", "m. pedersen": "mads pedersen", "m pedersen": "mads pedersen",
+        "pidcock": "thomas pidcock", "t. pidcock": "thomas pidcock", "tom pidcock": "thomas pidcock",
+        "van aert": "wout van aert", "w. van aert": "wout van aert", 
+        "van der poel": "mathieu van der poel", "m. van der poel": "mathieu van der poel",
+        "pogacar": "tadej pogacar", "t. pogacar": "tadej pogacar",
+        "de lie": "arnaud de lie", "a. de lie": "arnaud de lie",
+        "ganna": "filippo ganna", "thomas": "geraint thomas",
+        "merlier": "tim merlier", "milan": "jonathan milan"
+    }
+    
+    if naam_norm in bekende_gevallen:
+        correct = bekende_gevallen[naam_norm]
+        for target in lijst_met_namen:
+            if correct in target:
+                return dict_met_namen[target]
+                    
+    if naam_norm in lijst_met_namen:
+        return dict_met_namen[naam_norm]
+        
+    bests = process.extractBests(naam_norm, lijst_met_namen, scorer=fuzz.token_set_ratio, limit=5)
+    if bests and bests[0][1] >= 75:
+        top_score = bests[0][1]
+        candidates = [b[0] for b in bests if b[1] >= top_score - 3]
+        candidates.sort(key=lambda x: (abs(len(x) - len(naam_norm)), -fuzz.ratio(naam_norm, x)))
+        return dict_met_namen[candidates[0]]
+        
+    return naam
+
+# --- DATA LADEN ---
+@st.cache_data
+def load_giro_data():
+    prijzen_file = "sporza_prijzen_startlijst.csv"
+    stats_file = "renners_stats.csv"
+    
+    if not os.path.exists(prijzen_file) or not os.path.exists(stats_file):
+        st.warning(f"Bestanden '{prijzen_file}' of '{stats_file}' ontbreken. Zorg dat deze in de map staan.")
+        return pd.DataFrame()
+
+    try:
+        df_prog = pd.read_csv(prijzen_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
+        df_stats = pd.read_csv(stats_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip') 
+        
+        df_prog.columns = df_prog.columns.str.strip()
+        df_stats.columns = df_stats.columns.str.strip()
+        
+        if 'Naam' in df_prog.columns: df_prog = df_prog.rename(columns={'Naam': 'Renner'})
+        if 'Naam' in df_stats.columns: df_stats = df_stats.rename(columns={'Naam': 'Renner'})
+        if 'Ploeg' in df_stats.columns and 'Team' not in df_stats.columns: df_stats = df_stats.rename(columns={'Ploeg': 'Team'})
+        
+        df_stats = df_stats.drop_duplicates(subset=['Renner'], keep='first')
+        stats_names = df_stats['Renner'].unique()
+        norm_to_stats = {normalize_name_logic(n): n for n in stats_names}
+        
+        df_prog['Renner_Stats'] = df_prog['Renner'].apply(lambda x: match_naam_slim(x, norm_to_stats))
+        
+        merged_df = pd.merge(df_prog, df_stats, left_on='Renner_Stats', right_on='Renner', how='left', suffixes=('', '_drop'))
+        merged_df = merged_df.drop(columns=[c for c in merged_df.columns if '_drop' in c or c == 'Renner_Stats'])
+        
+        merged_df['Prijs'] = pd.to_numeric(merged_df['Prijs'], errors='coerce').fillna(0)
+        
+        # Converteer grote bedragen (>1000) naar miljoenen.
+        merged_df.loc[merged_df['Prijs'] > 1000, 'Prijs'] = merged_df['Prijs'] / 1000000
+        
+        # Uitzonderingsregel: 0.8M wordt 0.75M.
+        merged_df.loc[merged_df['Prijs'] == 0.8, 'Prijs'] = 0.75
+        
+        merged_df = merged_df[merged_df['Prijs'] > 0].sort_values(by='Prijs', ascending=False).drop_duplicates(subset=['Renner'])
+        
+        for col in ['GC', 'SPR', 'ITT', 'MTN']:
+            if col not in merged_df.columns: merged_df[col] = 0
+            merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0).astype(int)
+        
+        merged_df['Team'] = merged_df.get('Team', pd.Series(['Onbekend']*len(merged_df))).fillna('Onbekend')
+        
+        return merged_df
+    except Exception as e:
+        st.error(f"Fout in dataverwerking: {e}")
+        return pd.DataFrame()
+
+def calculate_giro_ev(df):
+    df = df.copy()
+    # Weging voor de Giro: GC is zwaar (eindwinst + bergen), SPR (vlakke ritten), ITT (tijdritten), MTN (vlucht/klim).
+    df['EV_GC'] = (df['GC'] / 100)**4 * 400  
+    df['EV_SPR'] = (df['SPR'] / 100)**4 * 250 
+    df['EV_ITT'] = (df['ITT'] / 100)**4 * 80  
+    df['EV_MTN'] = (df['MTN'] / 100)**4 * 100 
+
+    df['Giro_EV'] = (df['EV_GC'] + df['EV_SPR'] + df['EV_ITT'] + df['EV_MTN']).fillna(0).round(0).astype(int)
+    df['Waarde (EV/M)'] = (df['Giro_EV'] / df['Prijs']).replace([float('inf'), -float('inf')], 0).fillna(0).round(1)
+    
+    def bepaal_rol(row):
+        if row['GC'] >= 85: return 'Klassementsrenner'
+        if row['SPR'] >= 85: return 'Sprinter'
+        if row['ITT'] >= 85 and row['GC'] < 75: return 'Tijdrijder'
+        if row['MTN'] >= 80 and row['GC'] < 80: return 'Aanvaller / Klimmer'
+        return 'Knecht / Vrijbuiter'
+        
+    df['Type'] = df.apply(bepaal_rol, axis=1)
+    return df
+
+# --- SOLVER ---
+def solve_giro_team(df, max_bud, max_ren, max_per_team, force_base, ban_base):
+    prob = pulp.LpProblem("Sporza_Giro_Solver", pulp.LpMaximize)
+    x = pulp.LpVariable.dicts("Select", df.index, cat='Binary')
+    
+    prob += pulp.lpSum([df.loc[i, 'Giro_EV'] * x[i] for i in df.index])
+    prob += pulp.lpSum([x[i] for i in df.index]) == max_ren
+    prob += pulp.lpSum([df.loc[i, 'Prijs'] * x[i] for i in df.index]) <= max_bud
+    
+    teams = df['Team'].unique()
+    for team in teams:
+        team_indices = df[df['Team'] == team].index
+        prob += pulp.lpSum([x[i] for i in team_indices]) <= max_per_team
+
+    for i in df.index:
+        renner = df.loc[i, 'Renner']
+        if renner in force_base: prob += x[i] == 1
+        if renner in ban_base: prob += x[i] == 0
+
+    prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=15))
+    if pulp.LpStatus[prob.status] == 'Optimal':
+        return [df.loc[i, 'Renner'] for i in df.index if x[i].varValue > 0.5]
+    return []
+
+# --- HOOFDCODE ---
+df_raw = load_giro_data()
+
+if df_raw.empty:
+    st.stop()
+
+if "giro_selected_riders" not in st.session_state: 
+    st.session_state.giro_selected_riders = []
+
+with st.sidebar:
+    st.header(f"👤 Profiel: {speler_naam.capitalize()}")
+    
+    st.write("☁️ **Cloud Database**")
+    if speler_naam != "gast":
+        c_cloud1, c_cloud2 = st.columns(2)
+        with c_cloud1:
+            if st.button("💾 Opslaan", type="primary", use_container_width=True):
+                try:
+                    data = {"selected_riders": st.session_state.giro_selected_riders, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
+                    supabase.table(TABEL_NAAM).update({DB_KOLOM: data}).eq("username", speler_naam).execute()
+                    st.success("Opgeslagen!")
+                except Exception as e: st.error(f"Fout: {e}")
+        with c_cloud2:
+            if st.button("🔄 Inladen", use_container_width=True):
+                try:
+                    res = supabase.table(TABEL_NAAM).select(DB_KOLOM).eq("username", speler_naam).execute()
+                    if res.data and res.data[0].get(DB_KOLOM):
+                        st.session_state.giro_selected_riders = res.data[0][DB_KOLOM].get("selected_riders", [])
+                        st.success("Geladen!")
+                        st.rerun()
+                    else: st.warning("Geen team gevonden.")
+                except Exception as e: st.error(f"Fout: {e}")
+    else:
+        st.info("Log in met een account om cloud-opslag te gebruiken.")
+        
+    st.divider()
+    st.write("📁 **Lokale Backup (.json)**")
+    save_data = {"selected_riders": st.session_state.giro_selected_riders}
+    st.download_button("📥 Download als .JSON", data=json.dumps(save_data), file_name=f"{speler_naam}_giro_team.json", mime="application/json", use_container_width=True)
+    
+    uploaded_file = st.file_uploader("📂 Upload Team (.json)", type="json")
+    if uploaded_file is not None and st.button("Laad .json in", use_container_width=True):
+        try:
+            ld = json.load(uploaded_file)
+            oude_selectie = ld.get("selected_riders", [])
+            huidige_renners = df_raw['Renner'].tolist()
+            
+            def update_naam(naam):
+                bests = process.extractBests(naam, huidige_renners, scorer=fuzz.token_set_ratio, limit=4)
+                if bests and bests[0][1] > 75:
+                    top_score = bests[0][1]
+                    cands = [b[0] for b in bests if b[1] >= top_score - 2]
+                    cands.sort(key=lambda x: (abs(len(x) - len(naam)), -fuzz.ratio(naam, x)))
+                    return cands[0]
+                return naam
+
+            st.session_state.giro_selected_riders = [update_naam(r) for r in oude_selectie if update_naam(r) in huidige_renners]
+            st.success("Lokaal bestand geladen!")
+            st.rerun()
+        except Exception as e:
+            st.error("Fout bij inladen.")
+
+    st.divider()
+    st.markdown("### ⚙️ Spelregels & Limieten")
+    
+    max_budget = st.number_input("Budget (Miljoen)", value=100.0, step=1.0)
+    max_renners = st.number_input("Aantal Renners", value=16, step=1)
+    max_per_ploeg = st.number_input("Max per ploeg", value=3, min_value=1)
+    
+    df = calculate_giro_ev(df_raw)
+
+    with st.expander("🔒 Forceren / Uitsluiten", expanded=False):
+        force_base = st.multiselect("🟢 Moet in team:", options=df['Renner'].tolist())
+        ban_base = st.multiselect("🔴 Niet in team:", options=[r for r in df['Renner'].tolist() if r not in force_base])
+
+    st.write("")
+    if st.button("🚀 BEREKEN GIRO TEAM", type="primary", use_container_width=True):
+        res = solve_giro_team(df, max_budget, max_renners, max_per_ploeg, force_base, ban_base)
+        if res:
+            st.session_state.giro_selected_riders = res
+            st.rerun()
+        else:
+            st.error("Geen oplossing mogelijk binnen dit budget en deze restricties.")
+
+st.title("🇮🇹 Grote Ronde: Sporza Giromanager")
+st.divider()
+
+tab1, tab2, tab3 = st.tabs(["🚀 Jouw Selectie", "📋 Database (Giro)", "ℹ️ Uitleg Giromanager"])
+
+if not st.session_state.giro_selected_riders:
+    with tab1: st.info("👈 Stel je limieten in en klik op **Bereken Giro Team** in de zijbalk.")
+else:
+    with tab1:
+        st.subheader("📊 Dashboard")
+        start_team_df = df[df['Renner'].isin(st.session_state.giro_selected_riders)].copy()
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("💰 Budget over", f"€ {max_budget - start_team_df['Prijs'].sum():.2f}M")
+        m2.metric("🚴 Renners", f"{len(start_team_df)} / {max_renners}")
+        m3.metric("🎯 Team EV", f"{start_team_df['Giro_EV'].sum()}")
+        m4.metric("💨 Aantal Sprinters", f"{len(start_team_df[start_team_df['Type'] == 'Sprinter'])}")
+        st.divider()
+        
+        st.dataframe(start_team_df[['Renner', 'Team', 'Type', 'Prijs', 'GC', 'SPR', 'ITT', 'MTN', 'Giro_EV']].sort_values(by='Prijs', ascending=False), hide_index=True, use_container_width=True)
+
+with tab2:
+    st.subheader("Alle Renners")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1: search_name = st.text_input("🔍 Zoek op naam of Ploeg:")
+    with col_f2: type_filter = st.multiselect("Rol:", options=df['Type'].unique())
+    
+    d_df = df.copy()
+    if search_name: d_df = d_df[d_df['Renner'].str.contains(search_name, case=False, na=False) | d_df['Team'].str.contains(search_name, case=False, na=False)]
+    if type_filter: d_df = d_df[d_df['Type'].isin(type_filter)]
+    
+    st.dataframe(d_df[['Renner', 'Team', 'Type', 'Prijs', 'GC', 'SPR', 'ITT', 'MTN', 'Waarde (EV/M)', 'Giro_EV']].sort_values('Giro_EV', ascending=False), hide_index=True, use_container_width=True)
+
+with tab3:
+    st.markdown("""
+    ### De Sporza Giromanager Regels
+    De Giromanager verschilt enorm van het Klassiekerspel. Waar je in het voorjaar mikt op 20 renners voor 120M met 4 renners per team, speel je de Giro met een veel strakkere selectie:
+    
+    * **Ploeggrootte:** 16 renners.
+    * **Budget:** € 100 Miljoen.
+    * **Teamlimiet:** Maximaal 3 renners per officiële wielerploeg (bijv. max 3 van Visma | Lease a Bike).
+    
+    ### EV-Model voor Grote Rondes
+    In plaats van losse eendagskoersen, moet je team nu over 21 etappes presteren. De wiskundige solver berekent de EV (Expected Value) op basis van het profiel van de hele Giro:
+    
+    * **GC (Klassementsmannen):** Halen veruit de meeste punten in het eindklassement, de jongerentrui, en rijden constant top-20 in zware bergritten. Zwaarste weging in het model.
+    * **SPR (Sprinters):** Essentieel. Vlakke ritten eindigen zelden in een succesvolle ontsnapping, waardoor sprinters een uiterst veilige, gegarandeerde puntenbron zijn. Bovendien pakken ze de paarse trui.
+    * **ITT (Tijdrijders):** Vaak goedkopere renners die op 2 of 3 specifieke dagen uithalen.
+    * **MTN (Klimmers/Vluchters):** Vrijbuiters die punten pakken in de zware bergritten of de bergtrui.
+    
+    *Tip: Een winnend team in Sporza is historisch gezien een combinatie van 4 tot 5 dure klassementsrenners, 5 à 6 sterke sprinters, en een reeks goedkope aanvallers en tijdrijders om het budget rond te krijgen.*
+    """)
