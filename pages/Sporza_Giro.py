@@ -160,14 +160,14 @@ def calculate_giro_ev(df):
     df['Type'] = df.apply(bepaal_rol, axis=1)
     return df
 
-def calculate_prediction_ev(df, predictions):
-    """Bereken het aantal gehaalde punten op basis van de handmatige voorspellingen."""
-    # Sporza etappepunten: 1e:50, 2e:40, 3e:30, 4e:25, 5e:20
-    pts_map = [50, 40, 30, 25, 20]
+def calculate_prediction_ev(df, predictions, top_x):
+    # Sporza etappepunten top 10
+    pts_map = [50, 40, 30, 25, 20, 16, 14, 12, 10, 8]
     pred_series = pd.Series(0, index=df.index)
     
     for stage_id, preds in predictions.items():
-        for pos, renner in enumerate(preds):
+        for pos in range(min(top_x, len(preds))):
+            renner = preds[pos]
             if renner and renner != "-":
                 idx = df[df['Renner'] == renner].index
                 if not idx.empty:
@@ -207,7 +207,12 @@ if df_raw.empty:
 if "giro_selected_riders" not in st.session_state: 
     st.session_state.giro_selected_riders = []
 if "giro_stage_predictions" not in st.session_state:
-    st.session_state.giro_stage_predictions = {str(stage["id"]): [None]*5 for stage in GIRO_ETAPPES}
+    st.session_state.giro_stage_predictions = {str(stage["id"]): [None]*10 for stage in GIRO_ETAPPES}
+
+# Zorg ervoor dat oude opgeslagen lengtes naar 10 worden geüpdatet
+for k in st.session_state.giro_stage_predictions:
+    while len(st.session_state.giro_stage_predictions[k]) < 10:
+        st.session_state.giro_stage_predictions[k].append(None)
 
 with st.sidebar:
     st.header(f"👤 Profiel: {speler_naam.capitalize()}")
@@ -233,7 +238,10 @@ with st.sidebar:
                     if res.data and res.data[0].get(DB_KOLOM):
                         db_data = res.data[0][DB_KOLOM]
                         st.session_state.giro_selected_riders = db_data.get("selected_riders", [])
-                        st.session_state.giro_stage_predictions = db_data.get("predictions", {str(stage["id"]): [None]*5 for stage in GIRO_ETAPPES})
+                        preds = db_data.get("predictions", {str(stage["id"]): [None]*10 for stage in GIRO_ETAPPES})
+                        for k in preds:
+                            while len(preds[k]) < 10: preds[k].append(None)
+                        st.session_state.giro_stage_predictions = preds
                         st.success("Geladen!")
                         st.rerun()
                     else: st.warning("Geen team gevonden.")
@@ -266,7 +274,10 @@ with st.sidebar:
                 return naam
 
             st.session_state.giro_selected_riders = [update_naam(r) for r in oude_selectie if update_naam(r) in huidige_renners]
-            st.session_state.giro_stage_predictions = ld.get("predictions", {str(stage["id"]): [None]*5 for stage in GIRO_ETAPPES})
+            preds = ld.get("predictions", {str(stage["id"]): [None]*10 for stage in GIRO_ETAPPES})
+            for k in preds:
+                while len(preds[k]) < 10: preds[k].append(None)
+            st.session_state.giro_stage_predictions = preds
             st.success("Lokaal bestand geladen!")
             st.rerun()
         except Exception as e:
@@ -276,9 +287,10 @@ with st.sidebar:
     st.markdown("### 🧠 Berekeningsmethode")
     bouw_methode = st.radio(
         "Hoe moet de AI het team samenstellen?",
-        ["1. Volledig AI (Op basis van Stats)", "2. Gebaseerd op mijn Voorspellingen"],
-        help="Bij optie 2 kijkt de AI uitsluitend naar de verwachte punten uit de renners die jij in de 'Etappe Voorspellingen' tab hebt ingevuld."
+        ["1. Volledig AI (Op basis van Stats)", "2. Mijn Voorspellingen (+ AI opvulling)"],
+        help="Bij optie 2 forceert de solver de renners die jij in de 'Etappe Voorspellingen' tab hebt gezet. De overgebleven plekken/budget worden logisch aangevuld door de AI."
     )
+    top_x_voorspellingen = st.number_input("Top X Voorspellen per etappe", min_value=1, max_value=10, value=5)
     
     st.divider()
     st.markdown("### ⚙️ Spelregels & Limieten")
@@ -287,7 +299,10 @@ with st.sidebar:
     max_per_ploeg = st.number_input("Max per ploeg", value=3, min_value=1)
     
     df = calculate_giro_ev(df_raw)
-    df['Prediction_EV'] = calculate_prediction_ev(df, st.session_state.giro_stage_predictions)
+    df['Prediction_EV'] = calculate_prediction_ev(df, st.session_state.giro_stage_predictions, top_x_voorspellingen)
+    
+    # HYBRIDE SCORE
+    df['Combined_EV'] = (df['Prediction_EV'] * 1000) + df['Giro_EV']
 
     with st.expander("🔒 Forceren / Uitsluiten", expanded=False):
         force_base = st.multiselect("🟢 Moet in team:", options=df['Renner'].tolist())
@@ -296,12 +311,8 @@ with st.sidebar:
     st.write("")
     if st.button("🚀 BEREKEN GIRO TEAM", type="primary", use_container_width=True):
         actieve_ev_col = "Giro_EV"
-        
         if "2." in bouw_methode:
-            actieve_ev_col = "Prediction_EV"
-            if df['Prediction_EV'].sum() == 0:
-                st.error("Je hebt nog geen etappes voorspeld! Ga naar de tab 'Etappe Voorspellingen', vul renners in en probeer het opnieuw.")
-                st.stop()
+            actieve_ev_col = "Combined_EV"
                 
         res = solve_giro_team(df, max_budget, max_renners, max_per_ploeg, force_base, ban_base, actieve_ev_col)
         
@@ -336,31 +347,34 @@ with tab1:
         st.dataframe(start_team_df[toon_kolommen].sort_values(by='Prijs', ascending=False), hide_index=True, use_container_width=True)
 
 with tab2:
-    st.subheader("🏆 Voorspel de Top 5 per Etappe")
-    st.write("Vul hier je voorspellingen in. Als je in de zijbalk kiest voor 'Methode 2', bouwt de AI je team puur op basis van de verwachte punten uit deze lijst.")
-    st.markdown("**Puntentelling per etappe:** 1e = 50pt | 2e = 40pt | 3e = 30pt | 4e = 25pt | 5e = 20pt")
+    st.subheader(f"🏆 Voorspel de Top {top_x_voorspellingen} per Etappe")
+    st.write("De AI gebruikt deze voorspellingen (indien je Methode 2 kiest in de zijbalk) als absolute prioriteit bij het bouwen van je team.")
+    st.markdown("**Punten top 10:** 50, 40, 30, 25, 20, 16, 14, 12, 10, 8")
     
-    # Gebruik ALLE renners uit de database, zodat de AI weet wie hij moet kopen.
     renners_opties = ["-"] + sorted(df['Renner'].tolist())
     
     for etappe in GIRO_ETAPPES:
         stage_id_str = str(etappe["id"])
         
         with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']} | {etappe['km']} km) - {etappe['date']}", expanded=False):
-            cols = st.columns(5)
-            
-            for pos in range(5):
-                huidige_keuze = st.session_state.giro_stage_predictions[stage_id_str][pos]
-                index_keuze = renners_opties.index(huidige_keuze) if huidige_keuze in renners_opties else 0
+            # Maak blokken van maximaal 5 kolommen per rij voor netheid
+            for i in range(0, top_x_voorspellingen, 5):
+                chunk_size = min(5, top_x_voorspellingen - i)
+                cols = st.columns(chunk_size)
                 
-                with cols[pos]:
-                    nieuwe_keuze = st.selectbox(
-                        f"Positie {pos+1}", 
-                        options=renners_opties, 
-                        index=index_keuze, 
-                        key=f"stage_{stage_id_str}_pos_{pos}"
-                    )
-                    st.session_state.giro_stage_predictions[stage_id_str][pos] = nieuwe_keuze if nieuwe_keuze != "-" else None
+                for j in range(chunk_size):
+                    pos = i + j
+                    huidige_keuze = st.session_state.giro_stage_predictions[stage_id_str][pos]
+                    index_keuze = renners_opties.index(huidige_keuze) if huidige_keuze in renners_opties else 0
+                    
+                    with cols[j]:
+                        nieuwe_keuze = st.selectbox(
+                            f"Positie {pos+1}", 
+                            options=renners_opties, 
+                            index=index_keuze, 
+                            key=f"stage_{stage_id_str}_pos_{pos}"
+                        )
+                        st.session_state.giro_stage_predictions[stage_id_str][pos] = nieuwe_keuze if nieuwe_keuze != "-" else None
 
 with tab3:
     st.subheader("Alle Renners")
@@ -382,11 +396,6 @@ with tab4:
     **1. Volledig AI (Automatisch)**
     De wiskundige solver berekent de verwachte waarde (EV) van elke renner aan de hand van zijn statistieken in relatie tot het totale parcours (21 etappes). Hij maximaliseert deze waarde zonder over je budget (100M) of limieten (max 3 per ploeg) te gaan.
     
-    **2. Op basis van Mijn Voorspellingen (Handmatig sturen)**
-    Jij vult in de tab 'Etappe Voorspellingen' jouw top 5 in per rit. De tool berekent exact hoeveel Sporza-etappepunten (50, 40, 30, 25, 20) dit elke renner oplevert. De wiskundige solver krijgt daarna de opdracht: *Koop het team dat exact deze etappe-punten maximaliseert, binnen het budget en de spelregels.*
-    
-    ### De Sporza Giromanager Regels
-    * **Ploeggrootte:** 16 renners.
-    * **Budget:** € 100 Miljoen.
-    * **Teamlimiet:** Maximaal 3 renners per officiële wielerploeg (bijv. max 3 van Visma | Lease a Bike).
+    **2. Mijn Voorspellingen (+ AI opvulling)**
+    Jij vult in de tab 'Etappe Voorspellingen' jouw klassement in per rit. De tool berekent exact hoeveel Sporza-etappepunten dit elke renner oplevert. De wiskundige solver geeft absolute prioriteit aan het kopen van jouw voorspelde renners. Het overgebleven budget en de overgebleven plekken worden vervolgens optimaal opgevuld door de basis-AI.
     """)
