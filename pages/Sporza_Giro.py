@@ -4,6 +4,7 @@ import pulp
 import json
 import unicodedata
 import os
+import base64
 from thefuzz import process, fuzz
 from supabase import create_client
 from datetime import datetime
@@ -93,6 +94,21 @@ def match_naam_slim(naam, dict_met_namen):
         
     return naam
 
+def get_clickable_image_html(image_path, fallback_text, link):
+    """Converteert lokaal plaatje naar base64 voor weergave in HTML (Streamlit support), of toont een placeholder."""
+    if os.path.exists(image_path):
+        try:
+            with open(image_path, "rb") as img_file:
+                encoded_string = base64.b64encode(img_file.read()).decode()
+            ext = "png" if image_path.lower().endswith(".png") else "jpeg"
+            img_src = f"data:image/{ext};base64,{encoded_string}"
+        except Exception:
+            img_src = f"https://placehold.co/600x400/eeeeee/000000?text={fallback_text}"
+    else:
+        img_src = f"https://placehold.co/600x400/eeeeee/000000?text={fallback_text}"
+        
+    return f'<a href="{link}" target="_blank"><img src="{img_src}" width="100%" style="border-radius: 8px;"></a>'
+
 # --- DATA LADEN ---
 @st.cache_data
 def load_giro_data():
@@ -161,7 +177,6 @@ def calculate_giro_ev(df):
     return df
 
 def calculate_prediction_ev(df, predictions, top_x):
-    # Sporza etappepunten top 10
     pts_map = [50, 40, 30, 25, 20, 16, 14, 12, 10, 8]
     pred_series = pd.Series(0, index=df.index)
     
@@ -209,7 +224,6 @@ if "giro_selected_riders" not in st.session_state:
 if "giro_stage_predictions" not in st.session_state:
     st.session_state.giro_stage_predictions = {str(stage["id"]): [None]*10 for stage in GIRO_ETAPPES}
 
-# Zorg ervoor dat oude opgeslagen lengtes naar 10 worden geüpdatet
 for k in st.session_state.giro_stage_predictions:
     while len(st.session_state.giro_stage_predictions[k]) < 10:
         st.session_state.giro_stage_predictions[k].append(None)
@@ -300,8 +314,6 @@ with st.sidebar:
     
     df = calculate_giro_ev(df_raw)
     df['Prediction_EV'] = calculate_prediction_ev(df, st.session_state.giro_stage_predictions, top_x_voorspellingen)
-    
-    # HYBRIDE SCORE
     df['Combined_EV'] = (df['Prediction_EV'] * 1000) + df['Giro_EV']
 
     with st.expander("🔒 Forceren / Uitsluiten", expanded=False):
@@ -355,9 +367,29 @@ with tab2:
     
     for etappe in GIRO_ETAPPES:
         stage_id_str = str(etappe["id"])
+        link_url = f"https://www.giroditalia.it/en/tappe/stage-{etappe['id']}/"
+        
+        # Lokale paden voor de afbeeldingen (zorg dat deze bestanden in je project map staan!)
+        map_path = f"giro262/giro26-{etappe['id']}-map.jpg"
+        profile_path = f"giro262/giro26-{etappe['id']}-profile.jpg"
         
         with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']} | {etappe['km']} km) - {etappe['date']}", expanded=False):
-            # Maak blokken van maximaal 5 kolommen per rij voor netheid
+            
+            # --- AFBEELDINGEN (Klikbaar via Base64 Image Loader) ---
+            st.markdown(f"*(Klik op een afbeelding om de officiële pagina van etappe {etappe['id']} te openen op giroditalia.it)*")
+            c_img1, c_img2 = st.columns(2)
+            with c_img1:
+                map_html = get_clickable_image_html(map_path, f"Kaart+Etappe+{etappe['id']}", link_url)
+                st.markdown(map_html, unsafe_allow_html=True)
+                st.caption("🗺️ Routekaart")
+            with c_img2:
+                prof_html = get_clickable_image_html(profile_path, f"Profiel+Etappe+{etappe['id']}", link_url)
+                st.markdown(prof_html, unsafe_allow_html=True)
+                st.caption("⛰️ Hoogteprofiel")
+
+            st.divider()
+            
+            # --- VOORSPELLINGEN SELECTEREN ---
             for i in range(0, top_x_voorspellingen, 5):
                 chunk_size = min(5, top_x_voorspellingen - i)
                 cols = st.columns(chunk_size)
