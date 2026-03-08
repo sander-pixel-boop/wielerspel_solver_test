@@ -121,30 +121,33 @@ def get_clickable_image_html(image_path, fallback_text, link):
     return f'<a href="{link}" target="_blank"><img src="{img_src}" width="100%" style="border-radius:8px;"></a>'
 
 # --- AI ETAPPE VOORSPELLER ---
-def genereer_ai_etappe_voorspellingen(df, etappes, top_x):
+def genereer_ai_etappe_voorspellingen(df, etappes, top_x, custom_weights):
     ai_voorspellingen = {}
     for etappe in etappes:
         df_temp = df.copy()
-        w = etappe["w"]
+        w = custom_weights[str(etappe["id"])]
+        
         df_temp['stage_score'] = (
             (df_temp['SPR'] * w['SPR']) + 
             (df_temp['GC'] * w['GC']) + 
             (df_temp['ITT'] * w['ITT']) + 
             (df_temp['MTN'] * w['MTN'])
         )
+        
         top_renners = df_temp.sort_values(by=['stage_score', 'Giro_EV'], ascending=[False, False])['Renner'].head(top_x).tolist()
+        
         while len(top_renners) < 10: 
             top_renners.append(None)
+            
         ai_voorspellingen[str(etappe["id"])] = top_renners
     return ai_voorspellingen
 
-# --- DATA LADEN MET VERBETERDE FOUTMELDINGEN ---
+# --- DATA LADEN ---
 @st.cache_data
 def load_giro_data():
     prijzen_file = "giro262/sporza_giro26_startlijst.csv"
     stats_file = "renners_stats.csv"
     
-    # Check of de bestanden daadwerkelijk gevonden worden
     if not os.path.exists(prijzen_file):
         st.error(f"🚨 Het bestand `{prijzen_file}` ontbreekt in je map!")
         return pd.DataFrame()
@@ -156,8 +159,7 @@ def load_giro_data():
         df_prog = pd.read_csv(prijzen_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
         df_stats = pd.read_csv(stats_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip') 
         
-        df_prog.columns = df_prog.columns.str.strip()
-        df_stats.columns = df_stats.columns.str.strip()
+        df_prog.columns, df_stats.columns = df_prog.columns.str.strip(), df_stats.columns.str.strip()
         
         if 'Naam' in df_prog.columns: df_prog = df_prog.rename(columns={'Naam': 'Renner'})
         if 'Naam' in df_stats.columns: df_stats = df_stats.rename(columns={'Naam': 'Renner'})
@@ -171,20 +173,17 @@ def load_giro_data():
         merged_df = merged_df.drop(columns=[c for c in merged_df.columns if '_drop' in c or c == 'Renner_Stats'])
         
         if 'Prijs' not in merged_df.columns:
-            st.error("🚨 Fout in de startlijst: de kolom `Prijs` is niet gevonden. Bestaat deze wel echt in de CSV?")
+            st.error("🚨 Fout in de startlijst: de kolom `Prijs` is niet gevonden.")
             return pd.DataFrame()
 
         merged_df['Prijs'] = pd.to_numeric(merged_df['Prijs'], errors='coerce').fillna(0)
-        
-        # Converteer Sporza prijzen zoals we eerder hebben ingesteld (0.8M -> 750000 logic)
         merged_df.loc[merged_df['Prijs'] > 1000, 'Prijs'] = merged_df['Prijs'] / 1000000
         merged_df.loc[merged_df['Prijs'] == 0.8, 'Prijs'] = 0.75
         
         merged_df = merged_df[merged_df['Prijs'] > 0].sort_values(by='Prijs', ascending=False).drop_duplicates(subset=['Renner'])
         
         if merged_df.empty:
-            st.error("🚨 De bestanden zijn geladen, maar na het samenvoegen en filteren (Prijs > 0) bleven er 0 renners over.")
-            st.write("Voorbeeld data in startlijst CSV:", df_prog.head())
+            st.error("🚨 De bestanden zijn geladen, maar na filtering (Prijs > 0) bleven er 0 renners over.")
             return pd.DataFrame()
             
         for col in ['GC', 'SPR', 'ITT', 'MTN']:
@@ -193,7 +192,7 @@ def load_giro_data():
             
         return merged_df
     except Exception as e: 
-        st.error(f"🚨 Er trad een onverwachte fout op bij het laden van de data: {e}")
+        st.error(f"🚨 Er trad een fout op bij het laden van de data: {e}")
         return pd.DataFrame()
 
 def calculate_giro_ev(df):
@@ -245,14 +244,15 @@ def solve_giro_team(df, max_bud, max_ren, max_per_team, force_base, ban_base, ev
 
 # --- HOOFDCODE ---
 df_raw = load_giro_data()
+if df_raw.empty: st.stop()
 
-# STOP ALLEEN ALS DF LEEG IS NA ALLE ZICHTBARE FOUTMELDINGEN
-if df_raw.empty: 
-    st.stop()
-
-if "giro_selected_riders" not in st.session_state: st.session_state.giro_selected_riders = []
+# Sessiestates initialiseren
+if "giro_selected_riders" not in st.session_state: 
+    st.session_state.giro_selected_riders = []
 if "giro_stage_predictions" not in st.session_state:
     st.session_state.giro_stage_predictions = {str(stage["id"]): [None]*10 for stage in GIRO_ETAPPES}
+if "giro_weights" not in st.session_state:
+    st.session_state.giro_weights = {str(e["id"]): e["w"].copy() for e in GIRO_ETAPPES}
 
 with st.sidebar:
     st.header(f"👤 Profiel: {speler_naam.capitalize()}")
@@ -260,7 +260,12 @@ with st.sidebar:
         c_cloud1, c_cloud2 = st.columns(2)
         with c_cloud1:
             if st.button("💾 Opslaan", type="primary", use_container_width=True):
-                data = {"selected_riders": st.session_state.giro_selected_riders, "predictions": st.session_state.giro_stage_predictions, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
+                data = {
+                    "selected_riders": st.session_state.giro_selected_riders, 
+                    "predictions": st.session_state.giro_stage_predictions, 
+                    "weights": st.session_state.giro_weights,
+                    "ts": datetime.now().strftime("%Y-%m-%d %H:%M")
+                }
                 supabase.table(TABEL_NAAM).update({DB_KOLOM: data}).eq("username", speler_naam).execute()
                 st.success("Opgeslagen!")
         with c_cloud2:
@@ -270,6 +275,7 @@ with st.sidebar:
                     db_data = res.data[0][DB_KOLOM]
                     st.session_state.giro_selected_riders = db_data.get("selected_riders", [])
                     st.session_state.giro_stage_predictions = db_data.get("predictions", {str(stage["id"]): [None]*10 for stage in GIRO_ETAPPES})
+                    st.session_state.giro_weights = db_data.get("weights", {str(stage["id"]): stage["w"].copy() for stage in GIRO_ETAPPES})
                     st.rerun()
     
     st.divider()
@@ -309,7 +315,7 @@ with tab2:
     st.subheader(f"🏆 Voorspel de Top {top_x_voorspellingen}")
     c1, c2 = st.columns([1, 4])
     if c1.button("🤖 Vul in met AI"):
-        st.session_state.giro_stage_predictions = genereer_ai_etappe_voorspellingen(df, GIRO_ETAPPES, top_x_voorspellingen)
+        st.session_state.giro_stage_predictions = genereer_ai_etappe_voorspellingen(df, GIRO_ETAPPES, top_x_voorspellingen, st.session_state.giro_weights)
         st.rerun()
     if c2.button("🗑️ Wis alles"):
         st.session_state.giro_stage_predictions = {str(s["id"]): [None]*10 for s in GIRO_ETAPPES}
@@ -319,8 +325,8 @@ with tab2:
     for etappe in GIRO_ETAPPES:
         stage_id = str(etappe["id"])
         
-        w = etappe["w"]
-        weight_str = f"SPR:{int(w['SPR']*100)}% GC:{int(w['GC']*100)}% ITT:{int(w['ITT']*100)}% MTN:{int(w['MTN']*100)}%"
+        cw = st.session_state.giro_weights[stage_id]
+        weight_str = f"SPR:{int(cw['SPR']*100)}% GC:{int(cw['GC']*100)}% ITT:{int(cw['ITT']*100)}% MTN:{int(cw['MTN']*100)}%"
         
         with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']}) | 🤖 {weight_str}"):
             
@@ -332,6 +338,16 @@ with tab2:
             i1, i2 = st.columns(2)
             i1.markdown(get_clickable_image_html(map_path, f"Kaart+Etappe+{etappe['id']}", giro_link), unsafe_allow_html=True)
             i2.markdown(get_clickable_image_html(prof_path, f"Profiel+Etappe+{etappe['id']}", giro_link), unsafe_allow_html=True)
+            
+            st.divider()
+            st.markdown("##### ⚙️ Etappe weging aanpassen")
+            wc1, wc2, wc3, wc4 = st.columns(4)
+            new_spr = wc1.number_input("Sprint (SPR)", 0.0, 1.0, cw["SPR"], 0.1, key=f"wspr_{stage_id}")
+            new_gc  = wc2.number_input("Klassement (GC)", 0.0, 1.0, cw["GC"], 0.1, key=f"wgc_{stage_id}")
+            new_itt = wc3.number_input("Tijdrit (ITT)", 0.0, 1.0, cw["ITT"], 0.1, key=f"witt_{stage_id}")
+            new_mtn = wc4.number_input("Klim/Aanval (MTN)", 0.0, 1.0, cw["MTN"], 0.1, key=f"wmtn_{stage_id}")
+            
+            st.session_state.giro_weights[stage_id] = {"SPR": new_spr, "GC": new_gc, "ITT": new_itt, "MTN": new_mtn}
             
             st.divider()
             for i in range(0, top_x_voorspellingen, 5):
