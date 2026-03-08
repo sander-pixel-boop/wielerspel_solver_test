@@ -108,7 +108,6 @@ def match_naam_slim(naam, dict_met_namen):
     return naam
 
 def get_clickable_image_html(image_path, fallback_text, link):
-    """Laden van lokale afbeeldingen uit giro262 map"""
     if os.path.exists(image_path):
         try:
             with open(image_path, "rb") as img_file:
@@ -127,52 +126,74 @@ def genereer_ai_etappe_voorspellingen(df, etappes, top_x):
     for etappe in etappes:
         df_temp = df.copy()
         w = etappe["w"]
-        
         df_temp['stage_score'] = (
             (df_temp['SPR'] * w['SPR']) + 
             (df_temp['GC'] * w['GC']) + 
             (df_temp['ITT'] * w['ITT']) + 
             (df_temp['MTN'] * w['MTN'])
         )
-        
         top_renners = df_temp.sort_values(by=['stage_score', 'Giro_EV'], ascending=[False, False])['Renner'].head(top_x).tolist()
-        
         while len(top_renners) < 10: 
             top_renners.append(None)
-            
         ai_voorspellingen[str(etappe["id"])] = top_renners
     return ai_voorspellingen
 
-# --- DATA LADEN ---
+# --- DATA LADEN MET VERBETERDE FOUTMELDINGEN ---
 @st.cache_data
 def load_giro_data():
     prijzen_file = "giro262/sporza_giro26_startlijst.csv"
     stats_file = "renners_stats.csv"
     
-    if not os.path.exists(prijzen_file) or not os.path.exists(stats_file): 
+    # Check of de bestanden daadwerkelijk gevonden worden
+    if not os.path.exists(prijzen_file):
+        st.error(f"🚨 Het bestand `{prijzen_file}` ontbreekt in je map!")
+        return pd.DataFrame()
+    if not os.path.exists(stats_file):
+        st.error(f"🚨 Het bestand `{stats_file}` ontbreekt in je map!")
         return pd.DataFrame()
         
     try:
         df_prog = pd.read_csv(prijzen_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
         df_stats = pd.read_csv(stats_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip') 
-        df_prog.columns, df_stats.columns = df_prog.columns.str.strip(), df_stats.columns.str.strip()
+        
+        df_prog.columns = df_prog.columns.str.strip()
+        df_stats.columns = df_stats.columns.str.strip()
+        
         if 'Naam' in df_prog.columns: df_prog = df_prog.rename(columns={'Naam': 'Renner'})
         if 'Naam' in df_stats.columns: df_stats = df_stats.rename(columns={'Naam': 'Renner'})
         if 'Ploeg' in df_stats.columns: df_stats = df_stats.rename(columns={'Ploeg': 'Team'})
+        
         df_stats = df_stats.drop_duplicates(subset=['Renner'], keep='first')
         norm_to_stats = {normalize_name_logic(n): n for n in df_stats['Renner'].unique()}
         df_prog['Renner_Stats'] = df_prog['Renner'].apply(lambda x: match_naam_slim(x, norm_to_stats))
+        
         merged_df = pd.merge(df_prog, df_stats, left_on='Renner_Stats', right_on='Renner', how='left', suffixes=('', '_drop'))
         merged_df = merged_df.drop(columns=[c for c in merged_df.columns if '_drop' in c or c == 'Renner_Stats'])
+        
+        if 'Prijs' not in merged_df.columns:
+            st.error("🚨 Fout in de startlijst: de kolom `Prijs` is niet gevonden. Bestaat deze wel echt in de CSV?")
+            return pd.DataFrame()
+
         merged_df['Prijs'] = pd.to_numeric(merged_df['Prijs'], errors='coerce').fillna(0)
+        
+        # Converteer Sporza prijzen zoals we eerder hebben ingesteld (0.8M -> 750000 logic)
         merged_df.loc[merged_df['Prijs'] > 1000, 'Prijs'] = merged_df['Prijs'] / 1000000
         merged_df.loc[merged_df['Prijs'] == 0.8, 'Prijs'] = 0.75
+        
         merged_df = merged_df[merged_df['Prijs'] > 0].sort_values(by='Prijs', ascending=False).drop_duplicates(subset=['Renner'])
+        
+        if merged_df.empty:
+            st.error("🚨 De bestanden zijn geladen, maar na het samenvoegen en filteren (Prijs > 0) bleven er 0 renners over.")
+            st.write("Voorbeeld data in startlijst CSV:", df_prog.head())
+            return pd.DataFrame()
+            
         for col in ['GC', 'SPR', 'ITT', 'MTN']:
             if col not in merged_df.columns: merged_df[col] = 0
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0).astype(int)
+            
         return merged_df
-    except: 
+    except Exception as e: 
+        st.error(f"🚨 Er trad een onverwachte fout op bij het laden van de data: {e}")
         return pd.DataFrame()
 
 def calculate_giro_ev(df):
@@ -225,9 +246,8 @@ def solve_giro_team(df, max_bud, max_ren, max_per_team, force_base, ban_base, ev
 # --- HOOFDCODE ---
 df_raw = load_giro_data()
 
+# STOP ALLEEN ALS DF LEEG IS NA ALLE ZICHTBARE FOUTMELDINGEN
 if df_raw.empty: 
-    st.error("🚨 Databestanden ontbreken of zijn leeg!")
-    st.info("Zorg ervoor dat 'giro262/sporza_giro26_startlijst.csv' en 'renners_stats.csv' aanwezig zijn.")
     st.stop()
 
 if "giro_selected_riders" not in st.session_state: st.session_state.giro_selected_riders = []
