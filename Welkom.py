@@ -20,7 +20,7 @@ def hash_wachtwoord(wachtwoord):
 # --- AUTHENTICATIE ---
 if "ingelogde_speler" not in st.session_state:
     st.title("🔒 Welkom! Log in of maak een account")
-    st.markdown("*Statistieken en data mede geïnspireerd door [Wielerorakel.nl](https://wielerorakel.nl/)*")
+    st.markdown("*Data en Statistieken van [Wielerorakel.nl](https://wielerorakel.nl/)*")
     st.divider()
     
     tab1, tab2 = st.tabs(["Inloggen", "Account Aanmaken"])
@@ -70,7 +70,7 @@ if "ingelogde_speler" not in st.session_state:
 def home_page():
     speler = st.session_state.get("ingelogde_speler", "bezoeker").capitalize()
     st.write(f"# Welkom bij de Wieler Spellen Solver, {speler}! 🚴‍♂️")
-    st.markdown("*Statistieken en data mede geïnspireerd door [Wielerorakel.nl](https://wielerorakel.nl/)*")
+    st.markdown("*Data en Statistieken van [Wielerorakel.nl](https://wielerorakel.nl/)*")
     st.divider()
     st.markdown("👈 **Kies een spel in het menu aan de linkerkant om te beginnen!**")
     
