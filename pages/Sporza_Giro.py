@@ -95,7 +95,6 @@ def match_naam_slim(naam, dict_met_namen):
     return naam
 
 def get_clickable_image_html(image_path, fallback_text, link):
-    """Converteert lokaal plaatje naar base64 voor weergave in HTML (Streamlit support), of toont een placeholder."""
     if os.path.exists(image_path):
         try:
             with open(image_path, "rb") as img_file:
@@ -108,6 +107,37 @@ def get_clickable_image_html(image_path, fallback_text, link):
         img_src = f"https://placehold.co/600x400/eeeeee/000000?text={fallback_text}"
         
     return f'<a href="{link}" target="_blank"><img src="{img_src}" width="100%" style="border-radius: 8px;"></a>'
+
+# --- AI ETAPPE VOORSPELLER ---
+def genereer_ai_etappe_voorspellingen(df, etappes, top_x):
+    """Berekent automatisch de beste renners per etappe-type op basis van stats."""
+    ai_voorspellingen = {}
+    for etappe in etappes:
+        df_temp = df.copy()
+        stype = etappe["type"]
+        
+        if "Vlak" in stype:
+            df_temp['stage_score'] = df_temp['SPR']
+        elif "Tijdrit" in stype:
+            df_temp['stage_score'] = df_temp['ITT']
+        elif "Berg" in stype:
+            # Bergritten worden gedomineerd door GC mannen, met wat hulp van MTN(klimmer) stats
+            df_temp['stage_score'] = (df_temp['GC'] * 0.7) + (df_temp['MTN'] * 0.3)
+        elif "Heuvel" in stype:
+            # Heuvel is voor punchers: mix van sprint, klimmen en GC
+            df_temp['stage_score'] = (df_temp['SPR'] * 0.4) + (df_temp['MTN'] * 0.4) + (df_temp['GC'] * 0.2)
+        else:
+            df_temp['stage_score'] = df_temp['Giro_EV']
+            
+        top_renners = df_temp.sort_values(by=['stage_score', 'Giro_EV'], ascending=[False, False])['Renner'].head(top_x).tolist()
+        
+        # Vul aan met None zodat de lijst altijd precies 10 lang is (voor de save-state)
+        while len(top_renners) < 10:
+            top_renners.append(None)
+            
+        ai_voorspellingen[str(etappe["id"])] = top_renners
+        
+    return ai_voorspellingen
 
 # --- DATA LADEN ---
 @st.cache_data
@@ -361,6 +391,17 @@ with tab1:
 with tab2:
     st.subheader(f"🏆 Voorspel de Top {top_x_voorspellingen} per Etappe")
     st.write("De AI gebruikt deze voorspellingen (indien je Methode 2 kiest in de zijbalk) als absolute prioriteit bij het bouwen van je team.")
+    
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        if st.button("🤖 Vul automatisch in met AI", type="secondary"):
+            st.session_state.giro_stage_predictions = genereer_ai_etappe_voorspellingen(df, GIRO_ETAPPES, top_x_voorspellingen)
+            st.rerun()
+    with col_btn2:
+        if st.button("🗑️ Wis alles", type="secondary"):
+            st.session_state.giro_stage_predictions = {str(stage["id"]): [None]*10 for stage in GIRO_ETAPPES}
+            st.rerun()
+            
     st.markdown("**Punten top 10:** 50, 40, 30, 25, 20, 16, 14, 12, 10, 8")
     
     renners_opties = ["-"] + sorted(df['Renner'].tolist())
@@ -369,13 +410,11 @@ with tab2:
         stage_id_str = str(etappe["id"])
         link_url = f"https://www.giroditalia.it/en/tappe/stage-{etappe['id']}/"
         
-        # Lokale paden voor de afbeeldingen (zorg dat deze bestanden in je project map staan!)
         map_path = f"giro262/giro26-{etappe['id']}-map.jpg"
         profile_path = f"giro262/giro26-{etappe['id']}-profile.jpg"
         
         with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']} | {etappe['km']} km) - {etappe['date']}", expanded=False):
             
-            # --- AFBEELDINGEN (Klikbaar via Base64 Image Loader) ---
             st.markdown(f"*(Klik op een afbeelding om de officiële pagina van etappe {etappe['id']} te openen op giroditalia.it)*")
             c_img1, c_img2 = st.columns(2)
             with c_img1:
@@ -389,7 +428,6 @@ with tab2:
 
             st.divider()
             
-            # --- VOORSPELLINGEN SELECTEREN ---
             for i in range(0, top_x_voorspellingen, 5):
                 chunk_size = min(5, top_x_voorspellingen - i)
                 cols = st.columns(chunk_size)
@@ -429,5 +467,5 @@ with tab4:
     De wiskundige solver berekent de verwachte waarde (EV) van elke renner aan de hand van zijn statistieken in relatie tot het totale parcours (21 etappes). Hij maximaliseert deze waarde zonder over je budget (100M) of limieten (max 3 per ploeg) te gaan.
     
     **2. Mijn Voorspellingen (+ AI opvulling)**
-    Jij vult in de tab 'Etappe Voorspellingen' jouw klassement in per rit. De tool berekent exact hoeveel Sporza-etappepunten dit elke renner oplevert. De wiskundige solver geeft absolute prioriteit aan het kopen van jouw voorspelde renners. Het overgebleven budget en de overgebleven plekken worden vervolgens optimaal opgevuld door de basis-AI.
+    Jij vult in de tab 'Etappe Voorspellingen' jouw klassement in per rit (of je laat de AI dit voor je invullen). De tool berekent exact hoeveel Sporza-etappepunten dit elke renner oplevert. De wiskundige solver geeft absolute prioriteit aan het kopen van jouw voorspelde renners. Het overgebleven budget en de overgebleven plekken worden vervolgens optimaal opgevuld door de basis-AI.
     """)
