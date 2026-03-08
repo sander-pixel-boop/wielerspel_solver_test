@@ -1,58 +1,85 @@
 import streamlit as st
+import hashlib
+from supabase import create_client
 
 st.set_page_config(page_title="Wieler Spellen Solver", page_icon="🚴‍♂️")
 
-def check_password():
-    def password_entered():
-        user = st.session_state["username_input"].strip()
-        pwd = st.session_state["password_input"].strip()
-        
-        if user in st.secrets.get("passwords", {}) and pwd == str(st.secrets["passwords"][user]):
-            st.session_state["password_correct"] = True
-            st.session_state["ingelogde_speler"] = user
-            if "password_input" in st.session_state:
-                del st.session_state["password_input"]
-        else:
-            st.session_state["password_correct"] = False
+# Bron: Supabase Python SDK documentatie
+@st.cache_resource
+def init_connection():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-    if st.session_state.get("password_correct", False):
-        return True
+supabase = init_connection()
+TABEL_NAAM = "gebruikers_data_test"
 
-    st.write("# 🔒 Log in om verder te gaan")
-    st.text_input("Gebruikersnaam", key="username_input")
-    st.text_input("Wachtwoord", type="password", key="password_input")
-    st.button("Inloggen", on_click=password_entered, type="primary")
+def hash_wachtwoord(wachtwoord):
+    return hashlib.sha256(wachtwoord.encode()).hexdigest()
 
-    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-        st.error("❌ Gebruikersnaam of wachtwoord onjuist.")
-    return False
-
-if not check_password():
+if "ingelogde_speler" not in st.session_state:
+    st.title("🔒 Welkom! Log in of maak een account")
+    tab1, tab2 = st.tabs(["Inloggen", "Account Aanmaken"])
+    
+    with tab1:
+        inlog_naam = st.text_input("Gebruikersnaam", key="inlog_naam")
+        inlog_ww = st.text_input("Wachtwoord", type="password", key="inlog_ww")
+        if st.button("Log in", type="primary"):
+            if inlog_naam and inlog_ww:
+                res = supabase.table(TABEL_NAAM).select("password").eq("username", inlog_naam.lower()).execute()
+                if res.data and res.data[0].get("password") == hash_wachtwoord(inlog_ww):
+                    st.session_state["ingelogde_speler"] = inlog_naam.lower()
+                    st.rerun()
+                else:
+                    st.error("Onjuiste gebruikersnaam of wachtwoord.")
+            else:
+                st.warning("Vul beide velden in.")
+                
+    with tab2:
+        nieuw_naam = st.text_input("Kies een Gebruikersnaam", key="nieuw_naam")
+        nieuw_ww = st.text_input("Kies een Wachtwoord", type="password", key="nieuw_ww")
+        if st.button("Maak account aan"):
+            if nieuw_naam and nieuw_ww:
+                bestaat_al = supabase.table(TABEL_NAAM).select("username").eq("username", nieuw_naam.lower()).execute()
+                if bestaat_al.data:
+                    st.error("Deze gebruikersnaam is al in gebruik. Kies een andere.")
+                else:
+                    try:
+                        supabase.table(TABEL_NAAM).insert({
+                            "username": nieuw_naam.lower(),
+                            "password": hash_wachtwoord(nieuw_ww)
+                        }).execute()
+                        st.success("Account succesvol aangemaakt! Je kunt nu inloggen via het andere tabblad.")
+                    except Exception as e:
+                        st.error(f"Fout bij aanmaken account: {e}")
+            else:
+                st.warning("Vul beide velden in.")
+                
     st.stop()
 
-def home_page():
-    speler = st.session_state.get("ingelogde_speler", "bezoeker").capitalize()
-    st.write(f"# Welkom bij de Wieler Spellen Solver, {speler}! 🚴‍♂️")
-    st.markdown("👈 **Kies een spel in het menu aan de linkerkant om te beginnen!**")
+st.write(f"# Welkom, {st.session_state['ingelogde_speler'].capitalize()}! 🚴‍♂️")
 
-home = st.Page(home_page, title="Home", icon="🏠", default=True)
-cf_pagina = st.Page("pages/Cycling_Fantasy.py", title="CF Dashboard", icon="🚴")
-scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassiekers", icon="🏆")
-scorito_grand_tour = st.Page("pages/Scorito_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
-scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Evaluator", icon="📊")
+if st.button("Uitloggen"):
+    del st.session_state["ingelogde_speler"]
+    st.rerun()
 
-sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="Klassiekers", icon="🏁")
-sporza_grand_tour = st.Page("pages/Sporza_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
-sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="[Binnenkort] Evaluator", icon="📊")
-
-eigen_spel = st.Page("pages/Het_Spel.py", title="Custom Klassiekers Spel", icon="🎮")
-
-pg = st.navigation({
-    "Info": [home],
-    "Cycling Fantasy": [cf_pagina],
-    "Scorito": [scorito_klassiekers, scorito_grand_tour, scorito_evaluator],
-    "Sporza": [sporza_klassiekers, sporza_grand_tour, sporza_evaluator],
-    "Eigen Competitie": [eigen_spel]
-})
-
-pg.run()
+st.markdown(
+    """
+    Dit is jouw centrale dashboard voor het berekenen van de ultieme selecties voor de voorjaarsklassiekers en grote ronden.
+    
+    👈 **Kies een spel in het menu aan de linkerkant om te beginnen!**
+    
+    ### Beschikbare Solvers:
+    * **Scorito Klassiekers:** Optimaliseer je selectie met het 45M budget en bereken de perfecte wisselstrategie na Parijs-Roubaix.
+    * **Cycling Fantasy:** Bereken het optimale dagteam per koers op basis van ingeladen PCS-startlijsten en de vaste actuele credits.
+    * **🚧 WORK IN PROGRESS (WIP) 🚧 Sporza Wielermanager:** Bouw je team binnen de limieten van 120M, 20 renners en maximaal 4 per ploeg.
+    * *Binnenkort: Scorito en Sporza voor de Grote Ronden!*
+    
+    ---
+    
+    ### 🙏 Credits & Databronnen
+    Deze applicatie is gebouwd op de schouders van de fantastische wielercommunity. Veel dank aan:
+    * **[Wielerorakel.nl](https://www.cyclingoracle.com/):** Voor het leveren van de AI-gebaseerde Skill-scores van de renners.
+    * **[Kopmanpuzzel](https://kopmanpuzzel.up.railway.app/):** Voor het uitstekende voorwerk rondom de startlijsten en de actuele Scorito-prijzen.
+    """
+)
