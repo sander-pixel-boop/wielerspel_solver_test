@@ -20,6 +20,9 @@ def hash_wachtwoord(wachtwoord):
 # --- AUTHENTICATIE ---
 if "ingelogde_speler" not in st.session_state:
     st.title("🔒 Welkom! Log in of maak een account")
+    st.markdown("*Statistieken en data mede geïnspireerd door [Wielerorakel.nl](https://wielerorakel.nl/)*")
+    st.divider()
+    
     tab1, tab2 = st.tabs(["Inloggen", "Account Aanmaken"])
     
     with tab1:
@@ -67,6 +70,8 @@ if "ingelogde_speler" not in st.session_state:
 def home_page():
     speler = st.session_state.get("ingelogde_speler", "bezoeker").capitalize()
     st.write(f"# Welkom bij de Wieler Spellen Solver, {speler}! 🚴‍♂️")
+    st.markdown("*Statistieken en data mede geïnspireerd door [Wielerorakel.nl](https://wielerorakel.nl/)*")
+    st.divider()
     st.markdown("👈 **Kies een spel in het menu aan de linkerkant om te beginnen!**")
     
     if st.button("Uitloggen"):
@@ -84,7 +89,6 @@ scorito_giro = st.Page("pages/Scorito_Grand_Tour.py", title="Giro d'Italia", ico
 # Sporza pagina's
 sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="Klassiekers", icon="🏁")
 sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="Evaluator", icon="📊")
-# LET OP: Het Giro bestand moet exact 'Sporza_Giro.py' heten in je map 'pages'!
 sporza_giro = st.Page("pages/Sporza_Giro.py", title="Giro d'Italia", icon="🇮🇹")
 
 eigen_spel = st.Page("pages/Het_Spel.py", title="Custom Klassiekers Spel", icon="🎮")
