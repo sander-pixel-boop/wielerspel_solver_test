@@ -4,7 +4,6 @@ from supabase import create_client
 
 st.set_page_config(page_title="Wieler Spellen Solver", page_icon="🚴‍♂️")
 
-# Bron: Supabase Python SDK documentatie
 @st.cache_resource
 def init_connection():
     url = st.secrets["SUPABASE_URL"]
@@ -54,6 +53,11 @@ if "ingelogde_speler" not in st.session_state:
                         st.error(f"Fout bij aanmaken account: {e}")
             else:
                 st.warning("Vul beide velden in.")
+    
+    st.divider()
+    if st.button("Doorgaan als gast (zonder account)"):
+        st.session_state["ingelogde_speler"] = "gast"
+        st.rerun()
                 
     st.stop()
 
