@@ -81,8 +81,9 @@ def get_uitslagen(file_mod_time, alle_renners):
                 continue
             
             rider_name = str(row['Rider']).strip()
-            match = process.extractOne(rider_name, alle_renners, scorer=fuzz.token_set_ratio)
-            if match and match[1] > 70:
+            # STRENGE MATCHING VOOR UITSLAGEN
+            match = process.extractOne(rider_name, alle_renners, scorer=fuzz.token_sort_ratio)
+            if match and match[1] > 82:
                 uitslag_parsed.append({
                     "Race": koers,
                     "Rnk": rank_str,
@@ -184,12 +185,20 @@ def load_and_merge_data(prog_mod_time, scorito_mod_time, stats_mod_time):
 
         df_prog['Renner_Scorito'] = df_prog['Renner']
         df_prog['Renner_Stats'] = df_prog['Renner']
+        
+        # STRENGE MATCHING OM BROERS EN NAAMGENOTEN TE SCHEIDEN
         for i, row in df_prog.iterrows():
             short = normalize_name_logic(row['Renner'])
-            ms = process.extractOne(short, list(norm_to_scorito.keys()), scorer=fuzz.token_set_ratio)
-            if ms and ms[1] > 75: df_prog.at[i, 'Renner_Scorito'] = norm_to_scorito[ms[0]]
-            mst = process.extractOne(short, list(norm_to_stats.keys()), scorer=fuzz.token_set_ratio)
-            if mst and mst[1] > 75: df_prog.at[i, 'Renner_Stats'] = norm_to_stats[mst[0]]
+            
+            # Scorito Match (met token_sort_ratio > 82 ipv set_ratio)
+            ms = process.extractOne(short, list(norm_to_scorito.keys()), scorer=fuzz.token_sort_ratio)
+            if ms and ms[1] > 82: 
+                df_prog.at[i, 'Renner_Scorito'] = norm_to_scorito[ms[0]]
+                
+            # Stats Match (met token_sort_ratio > 82 ipv set_ratio)
+            mst = process.extractOne(short, list(norm_to_stats.keys()), scorer=fuzz.token_sort_ratio)
+            if mst and mst[1] > 82: 
+                df_prog.at[i, 'Renner_Stats'] = norm_to_stats[mst[0]]
                 
         merged_df = pd.merge(df_prog, df_prijzen, left_on='Renner_Scorito', right_on='Renner', how='left', suffixes=('', '_drop1'))
         merged_df = pd.merge(merged_df, df_stats, left_on='Renner_Stats', right_on='Renner', how='left', suffixes=('', '_drop2'))
@@ -419,8 +428,8 @@ with st.sidebar:
             huidige_renners = df_raw['Renner'].tolist()
             def update_naam(naam):
                 if naam in huidige_renners: return naam
-                match = process.extractOne(naam, huidige_renners, scorer=fuzz.token_set_ratio)
-                return match[0] if match and match[1] > 80 else naam
+                match = process.extractOne(naam, huidige_renners, scorer=fuzz.token_sort_ratio)
+                return match[0] if match and match[1] > 82 else naam
 
             st.session_state.selected_riders = [update_naam(r) for r in oude_selectie if update_naam(r) in huidige_renners]
             
