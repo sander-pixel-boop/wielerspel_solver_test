@@ -283,7 +283,6 @@ with st.sidebar:
     
     st.divider()
     bouw_methode = st.radio("Samenstel methode:", ["1. Volledig AI (Stats)", "2. Mijn Voorspellingen (+ AI opvulling)"])
-    # Standaard Top X is nu 3
     top_x_voorspellingen = st.number_input("Top X per etappe", 1, 10, 3)
     max_budget = st.number_input("Budget (Miljoen)", value=100.0)
     max_renners = st.number_input("Aantal Renners", value=16)
@@ -301,6 +300,36 @@ with st.sidebar:
         ev_col = "Giro_EV" if "1." in bouw_methode else "Combined_EV"
         res = solve_giro_team(df, max_budget, max_renners, max_per_ploeg, force_base, ban_base, ev_col)
         if res: st.session_state.giro_selected_riders = res; st.rerun()
+
+    st.divider()
+    st.markdown("#### 📥 Exporteer Data")
+    d_col1, d_col2 = st.columns(2)
+    
+    export_data = {
+        "team": st.session_state.giro_selected_riders,
+        "predictions": st.session_state.giro_stage_predictions,
+        "weights": st.session_state.giro_weights
+    }
+    d_col1.download_button(
+        label="📄 JSON", 
+        data=json.dumps(export_data, indent=2), 
+        file_name="sporza_giro_export.json", 
+        mime="application/json", 
+        use_container_width=True
+    )
+    
+    if st.session_state.giro_selected_riders:
+        export_df = df[df['Renner'].isin(st.session_state.giro_selected_riders)].copy()
+        csv_data = export_df.to_csv(index=False, sep=";").encode('utf-8-sig')
+        d_col2.download_button(
+            label="📊 Excel (CSV)", 
+            data=csv_data, 
+            file_name="sporza_giro_team.csv", 
+            mime="text/csv", 
+            use_container_width=True
+        )
+    else:
+        d_col2.button("📊 Excel (CSV)", disabled=True, use_container_width=True, help="Bereken eerst een team")
 
 tab1, tab2, tab3, tab4 = st.tabs(["🚀 Jouw Selectie", "📅 Etappe Voorspellingen", "📋 Database (Giro)", "ℹ️ Uitleg"])
 
@@ -342,8 +371,8 @@ with tab2:
             i1.markdown(get_clickable_image_html(map_path, f"Kaart+Etappe+{etappe['id']}", giro_link), unsafe_allow_html=True)
             i2.markdown(get_clickable_image_html(prof_path, f"Profiel+Etappe+{etappe['id']}", giro_link), unsafe_allow_html=True)
             
-            st.divider()
-            # Titel "⚙️ Etappe weging aanpassen" is hier verwijderd
+            # Subtiele sectie voor weging & voorspelling, dicht bij elkaar
+            st.markdown("###### Weging & Voorspelling")
             wc1, wc2, wc3, wc4 = st.columns(4)
             new_spr = wc1.number_input("Sprint (SPR)", 0.0, 1.0, cw["SPR"], 0.1, key=f"wspr_{stage_id}")
             new_gc  = wc2.number_input("Klassement (GC)", 0.0, 1.0, cw["GC"], 0.1, key=f"wgc_{stage_id}")
@@ -352,14 +381,13 @@ with tab2:
             
             st.session_state.giro_weights[stage_id] = {"SPR": new_spr, "GC": new_gc, "ITT": new_itt, "MTN": new_mtn}
             
-            st.divider()
             for i in range(0, top_x_voorspellingen, 5):
                 cols = st.columns(min(5, top_x_voorspellingen - i))
                 for j, col in enumerate(cols):
                     pos = i + j
                     val = st.session_state.giro_stage_predictions[stage_id][pos]
                     idx = renners_opties.index(val) if val in renners_opties else 0
-                    new_val = col.selectbox(f"Positie {pos+1}", renners_opties, index=idx, key=f"s{stage_id}p{pos}")
+                    new_val = col.selectbox(f"Pos {pos+1}", renners_opties, index=idx, key=f"s{stage_id}p{pos}")
                     st.session_state.giro_stage_predictions[stage_id][pos] = new_val if new_val != "-" else None
 
 with tab3:
