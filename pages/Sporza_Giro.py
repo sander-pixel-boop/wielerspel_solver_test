@@ -27,6 +27,31 @@ supabase = init_connection()
 TABEL_NAAM = "gebruikers_data_test"
 DB_KOLOM = "sporza_giro_team26"
 
+# --- ETAPPE DATA (Geëxtraheerd uit afbeelding) ---
+GIRO_ETAPPES = [
+    {"id": 1, "date": "08/05", "route": "Nessebar - Burgas", "km": 156, "type": "Vlak ➖"},
+    {"id": 2, "date": "09/05", "route": "Burgas - Valiko Tarnovo", "km": 220, "type": "Berg ⛰️"},
+    {"id": 3, "date": "10/05", "route": "Plovdiv - Sofia", "km": 174, "type": "Heuvel ↗️"},
+    {"id": 4, "date": "12/05", "route": "Catanzaro - Cosenza", "km": 144, "type": "Berg ⛰️"},
+    {"id": 5, "date": "13/05", "route": "Praia a Mare - Potenza", "km": 204, "type": "Heuvel ↗️"},
+    {"id": 6, "date": "14/05", "route": "Paestum - Naples", "km": 161, "type": "Heuvel ↗️"},
+    {"id": 7, "date": "15/05", "route": "Formia - Blockhaus", "km": 246, "type": "Berg ⛰️"},
+    {"id": 8, "date": "16/05", "route": "Chieti - Fermo", "km": 159, "type": "Heuvel ↗️"},
+    {"id": 9, "date": "17/05", "route": "Cervia - Corno alle Scale", "km": 184, "type": "Berg ⛰️"},
+    {"id": 10, "date": "19/05", "route": "Viareggio - Massa", "km": 40.2, "type": "Tijdrit ⏱️"},
+    {"id": 11, "date": "20/05", "route": "Porcari - Chiavari", "km": 178, "type": "Heuvel ↗️"},
+    {"id": 12, "date": "21/05", "route": "Imperia - Novi Ligure", "km": 177, "type": "Heuvel ↗️"},
+    {"id": 13, "date": "22/05", "route": "Alessandria - Verbania", "km": 186, "type": "Heuvel ↗️"},
+    {"id": 14, "date": "23/05", "route": "Aosta - Pila", "km": 133, "type": "Berg ⛰️"},
+    {"id": 15, "date": "24/05", "route": "Voghera - Milan", "km": 136, "type": "Vlak ➖"},
+    {"id": 16, "date": "26/05", "route": "Bellinzona - Carì", "km": 113, "type": "Berg ⛰️"},
+    {"id": 17, "date": "27/05", "route": "Cassano d'Adda - Andalo", "km": 200, "type": "Heuvel ↗️"},
+    {"id": 18, "date": "28/05", "route": "Fai della Paganella - Pieve di Soligo", "km": 167, "type": "Heuvel ↗️"},
+    {"id": 19, "date": "29/05", "route": "Feltre - Alleghe", "km": 151, "type": "Berg ⛰️"},
+    {"id": 20, "date": "30/05", "route": "Gemona del Friuli - Piancavallo", "km": 199, "type": "Berg ⛰️"},
+    {"id": 21, "date": "31/05", "route": "Rome - Rome", "km": 131, "type": "Vlak ➖"},
+]
+
 # --- HULPFUNCTIES ---
 def normalize_name_logic(text):
     if not isinstance(text, str): return ""
@@ -99,11 +124,7 @@ def load_giro_data():
         merged_df = merged_df.drop(columns=[c for c in merged_df.columns if '_drop' in c or c == 'Renner_Stats'])
         
         merged_df['Prijs'] = pd.to_numeric(merged_df['Prijs'], errors='coerce').fillna(0)
-        
-        # Converteer grote bedragen (>1000) naar miljoenen.
         merged_df.loc[merged_df['Prijs'] > 1000, 'Prijs'] = merged_df['Prijs'] / 1000000
-        
-        # Uitzonderingsregel: 0.8M wordt 0.75M.
         merged_df.loc[merged_df['Prijs'] == 0.8, 'Prijs'] = 0.75
         
         merged_df = merged_df[merged_df['Prijs'] > 0].sort_values(by='Prijs', ascending=False).drop_duplicates(subset=['Renner'])
@@ -121,7 +142,6 @@ def load_giro_data():
 
 def calculate_giro_ev(df):
     df = df.copy()
-    # Weging voor de Giro: GC is zwaar (eindwinst + bergen), SPR (vlakke ritten), ITT (tijdritten), MTN (vlucht/klim).
     df['EV_GC'] = (df['GC'] / 100)**4 * 400  
     df['EV_SPR'] = (df['SPR'] / 100)**4 * 250 
     df['EV_ITT'] = (df['ITT'] / 100)**4 * 80  
@@ -172,6 +192,8 @@ if df_raw.empty:
 
 if "giro_selected_riders" not in st.session_state: 
     st.session_state.giro_selected_riders = []
+if "giro_stage_predictions" not in st.session_state:
+    st.session_state.giro_stage_predictions = {str(stage["id"]): [None]*5 for stage in GIRO_ETAPPES}
 
 with st.sidebar:
     st.header(f"👤 Profiel: {speler_naam.capitalize()}")
@@ -182,7 +204,11 @@ with st.sidebar:
         with c_cloud1:
             if st.button("💾 Opslaan", type="primary", use_container_width=True):
                 try:
-                    data = {"selected_riders": st.session_state.giro_selected_riders, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")}
+                    data = {
+                        "selected_riders": st.session_state.giro_selected_riders, 
+                        "predictions": st.session_state.giro_stage_predictions,
+                        "ts": datetime.now().strftime("%Y-%m-%d %H:%M")
+                    }
                     supabase.table(TABEL_NAAM).update({DB_KOLOM: data}).eq("username", speler_naam).execute()
                     st.success("Opgeslagen!")
                 except Exception as e: st.error(f"Fout: {e}")
@@ -191,7 +217,10 @@ with st.sidebar:
                 try:
                     res = supabase.table(TABEL_NAAM).select(DB_KOLOM).eq("username", speler_naam).execute()
                     if res.data and res.data[0].get(DB_KOLOM):
-                        st.session_state.giro_selected_riders = res.data[0][DB_KOLOM].get("selected_riders", [])
+                        db_data = res.data[0][DB_KOLOM]
+                        st.session_state.giro_selected_riders = db_data.get("selected_riders", [])
+                        # Zet voorspellingen terug of maak leeg aan als ze niet in de db staan
+                        st.session_state.giro_stage_predictions = db_data.get("predictions", {str(stage["id"]): [None]*5 for stage in GIRO_ETAPPES})
                         st.success("Geladen!")
                         st.rerun()
                     else: st.warning("Geen team gevonden.")
@@ -201,7 +230,10 @@ with st.sidebar:
         
     st.divider()
     st.write("📁 **Lokale Backup (.json)**")
-    save_data = {"selected_riders": st.session_state.giro_selected_riders}
+    save_data = {
+        "selected_riders": st.session_state.giro_selected_riders,
+        "predictions": st.session_state.giro_stage_predictions
+    }
     st.download_button("📥 Download als .JSON", data=json.dumps(save_data), file_name=f"{speler_naam}_giro_team.json", mime="application/json", use_container_width=True)
     
     uploaded_file = st.file_uploader("📂 Upload Team (.json)", type="json")
@@ -221,6 +253,7 @@ with st.sidebar:
                 return naam
 
             st.session_state.giro_selected_riders = [update_naam(r) for r in oude_selectie if update_naam(r) in huidige_renners]
+            st.session_state.giro_stage_predictions = ld.get("predictions", {str(stage["id"]): [None]*5 for stage in GIRO_ETAPPES})
             st.success("Lokaal bestand geladen!")
             st.rerun()
         except Exception as e:
@@ -244,6 +277,7 @@ with st.sidebar:
         res = solve_giro_team(df, max_budget, max_renners, max_per_ploeg, force_base, ban_base)
         if res:
             st.session_state.giro_selected_riders = res
+            st.session_state.giro_stage_predictions = {str(stage["id"]): [None]*5 for stage in GIRO_ETAPPES} # Reset voorspellingen bij nieuw team
             st.rerun()
         else:
             st.error("Geen oplossing mogelijk binnen dit budget en deze restricties.")
@@ -251,10 +285,11 @@ with st.sidebar:
 st.title("🇮🇹 Grote Ronde: Sporza Giromanager")
 st.divider()
 
-tab1, tab2, tab3 = st.tabs(["🚀 Jouw Selectie", "📋 Database (Giro)", "ℹ️ Uitleg Giromanager"])
+tab1, tab2, tab3, tab4 = st.tabs(["🚀 Jouw Selectie", "📅 Etappe Voorspellingen", "📋 Database (Giro)", "ℹ️ Uitleg Giromanager"])
 
 if not st.session_state.giro_selected_riders:
     with tab1: st.info("👈 Stel je limieten in en klik op **Bereken Giro Team** in de zijbalk.")
+    with tab2: st.info("👈 Bereken eerst een team om je etappes in te vullen.")
 else:
     with tab1:
         st.subheader("📊 Dashboard")
@@ -269,7 +304,35 @@ else:
         
         st.dataframe(start_team_df[['Renner', 'Team', 'Type', 'Prijs', 'GC', 'SPR', 'ITT', 'MTN', 'Giro_EV']].sort_values(by='Prijs', ascending=False), hide_index=True, use_container_width=True)
 
-with tab2:
+    with tab2:
+        st.subheader("🏆 Stel je Dagteam op (Top 5 per etappe)")
+        st.write("Kies hier per etappe welke 5 renners uit jouw eigen selectie je verwacht in de top 5.")
+        
+        # Keuzelijst = Lege optie + Jouw 16 geselecteerde renners
+        renners_opties = ["-"] + sorted(st.session_state.giro_selected_riders)
+        
+        for etappe in GIRO_ETAPPES:
+            stage_id_str = str(etappe["id"])
+            
+            with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']} | {etappe['km']} km) - {etappe['date']}", expanded=False):
+                cols = st.columns(5)
+                
+                for pos in range(5):
+                    # Haal de huidige opgeslagen waarde op
+                    huidige_keuze = st.session_state.giro_stage_predictions[stage_id_str][pos]
+                    index_keuze = renners_opties.index(huidige_keuze) if huidige_keuze in renners_opties else 0
+                    
+                    with cols[pos]:
+                        # Maak de selectbox en update direct de state bij verandering
+                        nieuwe_keuze = st.selectbox(
+                            f"Positie {pos+1}", 
+                            options=renners_opties, 
+                            index=index_keuze, 
+                            key=f"stage_{stage_id_str}_pos_{pos}"
+                        )
+                        st.session_state.giro_stage_predictions[stage_id_str][pos] = nieuwe_keuze if nieuwe_keuze != "-" else None
+
+with tab3:
     st.subheader("Alle Renners")
     col_f1, col_f2 = st.columns(2)
     with col_f1: search_name = st.text_input("🔍 Zoek op naam of Ploeg:")
@@ -281,7 +344,7 @@ with tab2:
     
     st.dataframe(d_df[['Renner', 'Team', 'Type', 'Prijs', 'GC', 'SPR', 'ITT', 'MTN', 'Waarde (EV/M)', 'Giro_EV']].sort_values('Giro_EV', ascending=False), hide_index=True, use_container_width=True)
 
-with tab3:
+with tab4:
     st.markdown("""
     ### De Sporza Giromanager Regels
     De Giromanager verschilt enorm van het Klassiekerspel. Waar je in het voorjaar mikt op 20 renners voor 120M met 4 renners per team, speel je de Giro met een veel strakkere selectie:
