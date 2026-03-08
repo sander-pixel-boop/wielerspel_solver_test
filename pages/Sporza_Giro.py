@@ -118,8 +118,9 @@ def genereer_ai_etappe_voorspellingen(df, etappes, top_x):
 # --- DATA LADEN ---
 @st.cache_data
 def load_giro_data():
-    prijzen_file = "sporza_prijzen_startlijst.csv"
+    prijzen_file = "sporza_giro26_startlijst.csv"
     stats_file = "renners_stats.csv"
+    
     if not os.path.exists(prijzen_file) or not os.path.exists(stats_file): return pd.DataFrame()
     try:
         df_prog = pd.read_csv(prijzen_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
@@ -263,10 +264,11 @@ with tab2:
     for etappe in GIRO_ETAPPES:
         stage_id = str(etappe["id"])
         with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']})"):
-            # LOKALE AFBEELDINGEN uit giro262
-            giro_link = f"https://www.giroditalia.it/en/tappe/stage-{etappe['id']}/"
+            
+            # --- LINK AANGEPAST NAAR DE ALGEMENE ROUTE PAGINA ---
+            giro_link = "https://www.giroditalia.it/en/the-route/"
             map_path = f"giro262/giro26-{etappe['id']}-map.jpg"
-            prof_path = f"giro262/giro26-{etappe['id']}-profile.jpg"
+            prof_path = f"giro262/giro26-{etappe['id']}-hp.jpg" 
             
             st.markdown(f"*(Klik op een afbeelding voor de officiële info)*")
             i1, i2 = st.columns(2)
