@@ -38,6 +38,23 @@ def normalize_name_logic(text):
     nfkd_form = unicodedata.normalize('NFKD', text)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
+def slimme_matcher(korte_naam, dict_met_namen):
+    """Koppelt namen coulant, maar gebruikt een tie-breaker voor broers/naamgenoten"""
+    norm_short = normalize_name_logic(korte_naam)
+    if norm_short in dict_met_namen:
+        return dict_met_namen[norm_short]
+        
+    bests = process.extractBests(norm_short, list(dict_met_namen.keys()), scorer=fuzz.token_set_ratio, limit=3)
+    if bests and bests[0][1] > 75:
+        top_score = bests[0][1]
+        # Pak alle matches die dicht in de buurt van de topscore zitten
+        candidates = [b for b in bests if b[1] >= top_score - 2]
+        if len(candidates) > 1:
+            # Sorteer op absolute string-overeenkomst (fuzz.ratio) als tie-breaker
+            candidates.sort(key=lambda x: fuzz.ratio(norm_short, x[0]), reverse=True)
+        return dict_met_namen[candidates[0][0]]
+    return korte_naam
+
 def get_file_mod_time(filepath):
     return os.path.getmtime(filepath) if os.path.exists(filepath) else 0
 
@@ -81,13 +98,18 @@ def get_uitslagen(file_mod_time, alle_renners):
                 continue
             
             rider_name = str(row['Rider']).strip()
-            # STRENGE MATCHING VOOR UITSLAGEN
-            match = process.extractOne(rider_name, alle_renners, scorer=fuzz.token_sort_ratio)
-            if match and match[1] > 82:
+            # Slimme matcher voor uitslagen (zodat broers niet elkaars punten krijgen)
+            bests = process.extractBests(rider_name, alle_renners, scorer=fuzz.token_set_ratio, limit=3)
+            if bests and bests[0][1] > 70:
+                top_score = bests[0][1]
+                candidates = [b for b in bests if b[1] >= top_score - 2]
+                if len(candidates) > 1:
+                    candidates.sort(key=lambda x: fuzz.ratio(rider_name, x[0]), reverse=True)
+                
                 uitslag_parsed.append({
                     "Race": koers,
                     "Rnk": rank_str,
-                    "Renner": match[0]
+                    "Renner": candidates[0][0]
                 })
         return pd.DataFrame(uitslag_parsed)
     except:
@@ -186,19 +208,10 @@ def load_and_merge_data(prog_mod_time, scorito_mod_time, stats_mod_time):
         df_prog['Renner_Scorito'] = df_prog['Renner']
         df_prog['Renner_Stats'] = df_prog['Renner']
         
-        # STRENGE MATCHING OM BROERS EN NAAMGENOTEN TE SCHEIDEN
+        # TOEPASSEN VAN DE SLIMME MATCHER (Tie-breaker voor broers)
         for i, row in df_prog.iterrows():
-            short = normalize_name_logic(row['Renner'])
-            
-            # Scorito Match (met token_sort_ratio > 82 ipv set_ratio)
-            ms = process.extractOne(short, list(norm_to_scorito.keys()), scorer=fuzz.token_sort_ratio)
-            if ms and ms[1] > 82: 
-                df_prog.at[i, 'Renner_Scorito'] = norm_to_scorito[ms[0]]
-                
-            # Stats Match (met token_sort_ratio > 82 ipv set_ratio)
-            mst = process.extractOne(short, list(norm_to_stats.keys()), scorer=fuzz.token_sort_ratio)
-            if mst and mst[1] > 82: 
-                df_prog.at[i, 'Renner_Stats'] = norm_to_stats[mst[0]]
+            df_prog.at[i, 'Renner_Scorito'] = slimme_matcher(row['Renner'], norm_to_scorito)
+            df_prog.at[i, 'Renner_Stats'] = slimme_matcher(row['Renner'], norm_to_stats)
                 
         merged_df = pd.merge(df_prog, df_prijzen, left_on='Renner_Scorito', right_on='Renner', how='left', suffixes=('', '_drop1'))
         merged_df = pd.merge(merged_df, df_stats, left_on='Renner_Stats', right_on='Renner', how='left', suffixes=('', '_drop2'))
@@ -428,8 +441,15 @@ with st.sidebar:
             huidige_renners = df_raw['Renner'].tolist()
             def update_naam(naam):
                 if naam in huidige_renners: return naam
-                match = process.extractOne(naam, huidige_renners, scorer=fuzz.token_sort_ratio)
-                return match[0] if match and match[1] > 82 else naam
+                # Ook bij het inladen de slimme tie-breaker gebruiken
+                bests = process.extractBests(naam, huidige_renners, scorer=fuzz.token_set_ratio, limit=3)
+                if bests and bests[0][1] > 80:
+                    top_s = bests[0][1]
+                    cands = [b for b in bests if b[1] >= top_s - 2]
+                    if len(cands) > 1:
+                        cands.sort(key=lambda x: fuzz.ratio(naam, x[0]), reverse=True)
+                    return cands[0][0]
+                return naam
 
             st.session_state.selected_riders = [update_naam(r) for r in oude_selectie if update_naam(r) in huidige_renners]
             
