@@ -75,21 +75,26 @@ def home_page():
 
 home = st.Page(home_page, title="Home", icon="🏠", default=True)
 cf_pagina = st.Page("pages/Cycling_Fantasy.py", title="CF Dashboard", icon="🚴")
-scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassiekers", icon="🏆")
-scorito_grand_tour = st.Page("pages/Scorito_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
-scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Evaluator", icon="📊")
 
+# Scorito pagina's
+scorito_klassiekers = st.Page("pages/Klassiekers - Scorito.py", title="Klassiekers", icon="🏆")
+scorito_evaluator = st.Page("pages/Model_Evaluator_(Scorito).py", title="Evaluator", icon="📊")
+scorito_giro = st.Page("pages/Scorito_Grand_Tour.py", title="Giro d'Italia", icon="🇮🇹")
+
+# Sporza pagina's
 sporza_klassiekers = st.Page("pages/Klassiekers - Sporza.py", title="Klassiekers", icon="🏁")
-sporza_grand_tour = st.Page("pages/Sporza_Grand_Tour.py", title="[Binnenkort] Grand Tour", icon="⛰️")
-sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="[Binnenkort] Evaluator", icon="📊")
+sporza_evaluator = st.Page("pages/Sporza_Evaluator.py", title="Evaluator", icon="📊")
+sporza_giro = st.Page("pages/Sporza_Grand_Tour.py", title="Giro d'Italia", icon="🇮🇹")
 
 eigen_spel = st.Page("pages/Het_Spel.py", title="Custom Klassiekers Spel", icon="🎮")
 
 pg = st.navigation({
     "Info": [home],
     "Cycling Fantasy": [cf_pagina],
-    "Scorito": [scorito_klassiekers, scorito_grand_tour, scorito_evaluator],
-    "Sporza": [sporza_klassiekers, sporza_grand_tour, sporza_evaluator],
+    "Scorito - Klassiekers": [scorito_klassiekers, scorito_evaluator],
+    "Scorito - Grand Tours": [scorito_giro],
+    "Sporza - Klassiekers": [sporza_klassiekers, sporza_evaluator],
+    "Sporza - Grand Tours": [sporza_giro],
     "Eigen Competitie": [eigen_spel]
 })
 
