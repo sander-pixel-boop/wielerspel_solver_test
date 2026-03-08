@@ -118,10 +118,12 @@ def genereer_ai_etappe_voorspellingen(df, etappes, top_x):
 # --- DATA LADEN ---
 @st.cache_data
 def load_giro_data():
-    prijzen_file = "sporza_giro26_startlijst.csv"
+    prijzen_file = "giro262/sporza_giro26_startlijst.csv"
     stats_file = "renners_stats.csv"
     
-    if not os.path.exists(prijzen_file) or not os.path.exists(stats_file): return pd.DataFrame()
+    if not os.path.exists(prijzen_file) or not os.path.exists(stats_file): 
+        return pd.DataFrame()
+        
     try:
         df_prog = pd.read_csv(prijzen_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip')
         df_stats = pd.read_csv(stats_file, sep=None, engine='python', encoding='utf-8-sig', on_bad_lines='skip') 
@@ -142,7 +144,8 @@ def load_giro_data():
             if col not in merged_df.columns: merged_df[col] = 0
             merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0).astype(int)
         return merged_df
-    except: return pd.DataFrame()
+    except: 
+        return pd.DataFrame()
 
 def calculate_giro_ev(df):
     df = df.copy()
@@ -193,7 +196,11 @@ def solve_giro_team(df, max_bud, max_ren, max_per_team, force_base, ban_base, ev
 
 # --- HOOFDCODE ---
 df_raw = load_giro_data()
-if df_raw.empty: st.stop()
+
+if df_raw.empty: 
+    st.error("🚨 Databestanden ontbreken of zijn leeg!")
+    st.info("Zorg ervoor dat 'giro262/sporza_giro26_startlijst.csv' en 'renners_stats.csv' aanwezig zijn.")
+    st.stop()
 
 if "giro_selected_riders" not in st.session_state: st.session_state.giro_selected_riders = []
 if "giro_stage_predictions" not in st.session_state:
@@ -265,7 +272,6 @@ with tab2:
         stage_id = str(etappe["id"])
         with st.expander(f"Etappe {etappe['id']}: {etappe['route']} ({etappe['type']})"):
             
-            # --- LINK AANGEPAST NAAR DE ALGEMENE ROUTE PAGINA ---
             giro_link = "https://www.giroditalia.it/en/the-route/"
             map_path = f"giro262/giro26-{etappe['id']}-map.jpg"
             prof_path = f"giro262/giro26-{etappe['id']}-hp.jpg" 
