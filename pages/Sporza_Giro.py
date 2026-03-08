@@ -283,6 +283,7 @@ with st.sidebar:
     
     st.divider()
     bouw_methode = st.radio("Samenstel methode:", ["1. Volledig AI (Stats)", "2. Mijn Voorspellingen (+ AI opvulling)"])
+    # Standaard Top X is 3
     top_x_voorspellingen = st.number_input("Top X per etappe", 1, 10, 3)
     max_budget = st.number_input("Budget (Miljoen)", value=100.0)
     max_renners = st.number_input("Aantal Renners", value=16)
@@ -322,14 +323,14 @@ with st.sidebar:
         export_df = df[df['Renner'].isin(st.session_state.giro_selected_riders)].copy()
         csv_data = export_df.to_csv(index=False, sep=";").encode('utf-8-sig')
         d_col2.download_button(
-            label="📊 Excel (CSV)", 
+            label="📊 Excel", 
             data=csv_data, 
             file_name="sporza_giro_team.csv", 
             mime="text/csv", 
             use_container_width=True
         )
     else:
-        d_col2.button("📊 Excel (CSV)", disabled=True, use_container_width=True, help="Bereken eerst een team")
+        d_col2.button("📊 Excel", disabled=True, use_container_width=True, help="Bereken eerst een team")
 
 tab1, tab2, tab3, tab4 = st.tabs(["🚀 Jouw Selectie", "📅 Etappe Voorspellingen", "📋 Database (Giro)", "ℹ️ Uitleg"])
 
@@ -371,8 +372,7 @@ with tab2:
             i1.markdown(get_clickable_image_html(map_path, f"Kaart+Etappe+{etappe['id']}", giro_link), unsafe_allow_html=True)
             i2.markdown(get_clickable_image_html(prof_path, f"Profiel+Etappe+{etappe['id']}", giro_link), unsafe_allow_html=True)
             
-            # Subtiele sectie voor weging & voorspelling, dicht bij elkaar
-            st.markdown("###### Weging & Voorspelling")
+            st.divider()
             wc1, wc2, wc3, wc4 = st.columns(4)
             new_spr = wc1.number_input("Sprint (SPR)", 0.0, 1.0, cw["SPR"], 0.1, key=f"wspr_{stage_id}")
             new_gc  = wc2.number_input("Klassement (GC)", 0.0, 1.0, cw["GC"], 0.1, key=f"wgc_{stage_id}")
@@ -392,3 +392,37 @@ with tab2:
 
 with tab3:
     st.dataframe(df.sort_values('Giro_EV', ascending=False), hide_index=True, use_container_width=True)
+
+with tab4:
+    st.header("ℹ️ Uitleg & Disclaimer")
+    
+    st.warning("""
+    **⚠️ LET OP: Voorlopige Data!**
+    De huidige startlijst en de daaraan gekoppelde Sporza-prijzen zijn op dit moment nog **niet compleet en slechts een inschatting**. 
+    Zodra de echte Giro d'Italia dichterbij komt en Sporza de definitieve prijzen lanceert, worden deze bestanden achter de schermen geüpdatet!
+    """)
+    
+    st.markdown("""
+    ### 🚴‍♂️ Hoe werkt de AI Manager?
+    Dit dashboard combineert krachtige wiskundige optimalisatie met de data van *Wielerorakel* om het perfecte Sporza Giro-team voor jou samen te stellen.
+
+    **Samenstel Methode 1: Volledig AI (Stats)**
+    * De solver negeert jouw etappe-voorspellingen.
+    * Hij berekent de optimale 16 renners puur op basis van de algemene zwaarte van het parcours en de basisscores (EV) per renner per uitgegeven miljoen.
+    
+    **Samenstel Methode 2: Mijn Voorspellingen (+ AI opvulling)**
+    * De solver gebruikt de namen die jij in Tab 2 (Etappe Voorspellingen) hebt ingevuld om bonuspunten toe te kennen.
+    * Renners die je vaker voorspelt worden als "waardevoller" beschouwd. De rest van het budget wordt door de AI optimaal opgevuld.
+    
+    ### ⚙️ Wat doen de wegingen per etappe?
+    Elke etappe is vooraf ingesteld met een weging die samen `1.0` (100%) vormt. 
+    * **SPR (Sprint):** Bepaalt of typische sprinters hier makkelijk punten scoren.
+    * **GC (Klassement):** Bepaalt of de rit zo zwaar is dat alleen de échte topklimmers voor de zege strijden.
+    * **ITT (Tijdrit):** Tijdrijdersvoordeel.
+    * **MTN (Aanval/Klim):** Bepaalt of vluchters en punchers hier een kans maken.
+    
+    *Voorbeeld: Een weging van `SPR: 0.8` en `MTN: 0.2` betekent dat de AI er vanuit gaat dat sprinters 80% kans hebben om het hier uit te vechten, maar dat ontsnappingen (20%) niet ondenkbaar zijn wegens een vroege heuvel.* Je kunt deze wegingen naar eigen inzicht via de schuifjes aanpassen!
+    
+    ### 💾 Data opslaan en delen
+    Je profiel slaat je team, voorspellingen en je aangepaste wegingen op in een cloud-database. Via de knoppen links onderin kun je je selectie bovendien downloaden als CSV (voor Excel) of als JSON-bestand.
+    """)
