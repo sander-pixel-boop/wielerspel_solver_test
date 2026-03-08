@@ -39,31 +39,25 @@ def normalize_name_logic(text):
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
 def match_naam_slim(naam, dict_met_namen):
-    """
-    Koppelt namen coulant om lege databases te voorkomen, maar gebruikt een 
-    lengte-tie-breaker en hardcoded dict om broers/naamgenoten te scheiden.
-    """
     naam_norm = normalize_name_logic(naam)
     lijst_met_namen = list(dict_met_namen.keys())
     
-    # 1. Bekende Probleemgevallen (Handmatige Override)
+    # 1. Exacte mapping voor afkortingen en probleemgevallen (Geen endswith meer!)
     bekende_gevallen = {
-        "philipsen": "jasper philipsen",
-        "pedersen": "mads pedersen",
-        "pidcock": "thomas pidcock",
-        "tom pidcock": "thomas pidcock",
-        "van aert": "wout van aert",
-        "van der poel": "mathieu van der poel",
-        "pogacar": "tadej pogacar",
-        "de lie": "arnaud de lie"
+        "philipsen": "jasper philipsen", "j. philipsen": "jasper philipsen", "j philipsen": "jasper philipsen",
+        "pedersen": "mads pedersen", "m. pedersen": "mads pedersen", "m pedersen": "mads pedersen",
+        "pidcock": "thomas pidcock", "t. pidcock": "thomas pidcock", "tom pidcock": "thomas pidcock",
+        "van aert": "wout van aert", "w. van aert": "wout van aert", 
+        "van der poel": "mathieu van der poel", "m. van der poel": "mathieu van der poel",
+        "pogacar": "tadej pogacar", "t. pogacar": "tadej pogacar",
+        "de lie": "arnaud de lie", "a. de lie": "arnaud de lie"
     }
     
-    # Als input = "Philipsen" of "J. Philipsen"
-    for fout, correct in bekende_gevallen.items():
-        if naam_norm == fout or naam_norm.endswith(f" {fout}") or naam_norm.endswith(f". {fout}"):
-            for target in lijst_met_namen:
-                if correct in target:
-                    return dict_met_namen[target]
+    if naam_norm in bekende_gevallen:
+        correct = bekende_gevallen[naam_norm]
+        for target in lijst_met_namen:
+            if correct in target:
+                return dict_met_namen[target]
                     
     # 2. Exacte match
     if naam_norm in lijst_met_namen:
@@ -73,30 +67,30 @@ def match_naam_slim(naam, dict_met_namen):
     bests = process.extractBests(naam_norm, lijst_met_namen, scorer=fuzz.token_set_ratio, limit=5)
     if bests and bests[0][1] >= 75:
         top_score = bests[0][1]
-        # Pak alle namen met een topscore
         candidates = [b[0] for b in bests if b[1] >= top_score - 3]
-        
-        # TIE-BREAKER: Kijk wie qua lengte het dichtste bij het origineel ligt.
-        # "Philipsen" lijkt qua lengte meer op "Jasper Philipsen" dan "Albert Withen Philipsen".
         candidates.sort(key=lambda x: (abs(len(x) - len(naam_norm)), -fuzz.ratio(naam_norm, x)))
         return dict_met_namen[candidates[0]]
         
     return naam
 
 def match_uitslag_naam(naam, alle_renners):
-    """Dezelfde slimme logica, maar specifiek voor de uitslagen.csv array"""
     naam_norm = normalize_name_logic(naam)
     bekende_gevallen = {
-        "philipsen": "jasper philipsen", "pedersen": "mads pedersen", "pidcock": "thomas pidcock",
-        "tom pidcock": "thomas pidcock", "van aert": "wout van aert", "van der poel": "mathieu van der poel",
-        "pogacar": "tadej pogacar", "de lie": "arnaud de lie"
+        "philipsen": "jasper philipsen", "j. philipsen": "jasper philipsen", "j philipsen": "jasper philipsen",
+        "pedersen": "mads pedersen", "m. pedersen": "mads pedersen", "m pedersen": "mads pedersen",
+        "pidcock": "thomas pidcock", "t. pidcock": "thomas pidcock", "tom pidcock": "thomas pidcock",
+        "van aert": "wout van aert", "w. van aert": "wout van aert", 
+        "van der poel": "mathieu van der poel", "m. van der poel": "mathieu van der poel",
+        "pogacar": "tadej pogacar", "t. pogacar": "tadej pogacar",
+        "de lie": "arnaud de lie", "a. de lie": "arnaud de lie"
     }
-    for fout, correct in bekende_gevallen.items():
-        if naam_norm == fout or naam_norm.endswith(f" {fout}") or naam_norm.endswith(f". {fout}"):
-            for target in alle_renners:
-                if correct in normalize_name_logic(target):
-                    return target
-                    
+    
+    if naam_norm in bekende_gevallen:
+        correct = bekende_gevallen[naam_norm]
+        for target in alle_renners:
+            if correct in normalize_name_logic(target):
+                return target
+                
     bests = process.extractBests(naam_norm, alle_renners, scorer=fuzz.token_set_ratio, limit=5)
     if bests and bests[0][1] >= 75:
         top_score = bests[0][1]
@@ -249,7 +243,6 @@ def load_and_merge_data(prog_mod_time, scorito_mod_time, stats_mod_time):
         norm_to_scorito = {normalize_name_logic(n): n for n in scorito_names}
         norm_to_stats = {normalize_name_logic(n): n for n in stats_names}
 
-        # Toepassen van de nieuwe slimme matcher
         df_prog['Renner_Scorito'] = df_prog['Renner'].apply(lambda x: match_naam_slim(x, norm_to_scorito))
         df_prog['Renner_Stats'] = df_prog['Renner'].apply(lambda x: match_naam_slim(x, norm_to_stats))
                 
@@ -258,7 +251,6 @@ def load_and_merge_data(prog_mod_time, scorito_mod_time, stats_mod_time):
         merged_df = merged_df.drop(columns=[c for c in merged_df.columns if '_drop' in c or 'Renner_' in c])
         merged_df['Prijs'] = pd.to_numeric(merged_df['Prijs'], errors='coerce').fillna(0).astype(int)
         
-        # Gooi renners zonder prijs weg en drop duplicaten
         merged_df = merged_df[merged_df['Prijs'] > 0].sort_values(by='Prijs', ascending=False).drop_duplicates(subset=['Renner'])
         
         ALLE_KOERSEN = ['OHN', 'KBK', 'SB', 'PN', 'TA', 'MSR', 'BDP', 'E3', 'GW', 'DDV', 'RVV', 'SP', 'PR', 'BP', 'AGR', 'WP', 'LBL']
@@ -482,7 +474,7 @@ with st.sidebar:
             
             huidige_renners = df_raw['Renner'].tolist()
             def update_naam(naam):
-                return match_uitslag_naam(naam, huidige_renners) # Gebruik dezelfde robuuste logic voor inladen
+                return match_uitslag_naam(naam, huidige_renners)
 
             st.session_state.selected_riders = [update_naam(r) for r in oude_selectie if update_naam(r) in huidige_renners]
             
@@ -767,7 +759,7 @@ else:
         st.header("🗓️ Startlijst & Uitslagen")
         
         if toon_uitslagen:
-            st.success("✅ Actuele uitslagen ingeladen! Top 20 finishes worden beloond met een medaille (🏅). Tabel blijft perfect sorteerbaar.")
+            st.success("✅ Actuele uitslagen ingeladen! Top 20 finishes worden beloond met medailles (🏅). Tabel blijft perfect sorteerbaar.")
             u_time = get_file_mod_time("uitslagen.csv")
             df_uitslagen = get_uitslagen(u_time, df['Renner'].tolist())
             verreden_koersen = df_uitslagen['Race'].unique() if not df_uitslagen.empty else []
